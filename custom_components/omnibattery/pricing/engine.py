@@ -5876,6 +5876,18 @@ class PricingManager:
                         await self._stop_dynamic_price_slot("soc_target_reached")
                 return
 
+        # A rebuild that selects no slots, or the midnight reset, can remove the
+        # slot a live charge belongs to, and Phase 4 then has nothing to stop.
+        # The control cycle returns early while this flag is set, so the last
+        # charge command would keep running with normal control locked out.
+        # Normal PD takes ownership later in this same cycle; avoid an
+        # intermediate idle write that would conflict with that command.
+        if (
+            self._controller.grid_charging_active
+            and not self._controller.predictive_charging_overridden
+        ):
+            await self._stop_dynamic_price_slot("slot_withdrawn", write_idle=False)
+
         if (
             getattr(self._controller, "_predictive_charge_suspended_for_demand", False)
             and not getattr(self._controller, "_current_price_slot_active", False)

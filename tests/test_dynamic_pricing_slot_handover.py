@@ -877,3 +877,99 @@ def test_full_solar_reserve_verdict_is_not_shadowed_by_an_earlier_purpose(clock)
 
     assert ctrl._current_price_slot_active is True
     assert ctrl._predictive_charge_target_soc[battery] == pytest.approx(40.0)
+
+
+def _withdraw_schedule(ctrl):
+    """Stand in for an evaluation that selected no slots at all."""
+
+    async def evaluate(**_kwargs):
+        ctrl._dynamic_pricing_schedule = None
+        ctrl._dynamic_pricing_evaluated_date = engine_module.datetime.now().date()
+
+    return evaluate
+
+
+def _running_charge(clock):
+    battery = _Battery(20.0)
+    running = _slots(_at(23, 45), [0.30])[0]
+    ctrl = _controller(
+        battery,
+        _decision(8.0),
+        _schedule({running: SLOT_PURPOSE_DEFICIT}),
+    )
+    manager = _manager(ctrl, _balance(battery, 8.0))
+    clock.value = running.start
+    _run(manager)
+    assert ctrl.grid_charging_active is True
+    assert ctrl._current_price_slot_active is True
+    return ctrl, manager
+
+
+def test_evaluation_without_slots_stops_the_charge_it_withdrew(clock):
+    ctrl, manager = _running_charge(clock)
+    clock.value = _at(23, 50)
+    manager._is_solar_forecast_reeval = lambda _now: True
+    manager._evaluate_dynamic_pricing = _withdraw_schedule(ctrl)
+
+    _run(manager)
+
+    assert ctrl._dynamic_pricing_schedule is None
+    assert ctrl.grid_charging_active is False
+    assert ctrl._current_price_slot_active is False
+    assert ctrl._active_dynamic_slot_purpose is None
+    assert ctrl._active_dynamic_price_slot is None
+    # Normal control takes the battery over in this same cycle.
+    assert ctrl.first_execution is True
+    assert ctrl.idle_writes == []
+
+
+def test_first_cycle_after_midnight_stops_a_slot_the_reevaluation_removed(clock):
+    """The re-evaluation runs before the slot end is seen, and dates the plan today."""
+    ctrl, manager = _running_charge(clock)
+    clock.value = _at(23, 45) + timedelta(minutes=15, seconds=17)
+    manager._is_solar_forecast_reeval = lambda _now: True
+    manager._evaluate_dynamic_pricing = _withdraw_schedule(ctrl)
+
+    _run(manager)
+
+    assert ctrl._dynamic_pricing_evaluated_date == clock.value.date()
+    assert ctrl.grid_charging_active is False
+    assert ctrl._current_price_slot_active is False
+
+
+def test_midnight_reset_does_not_leave_the_charge_flag_behind(clock):
+    """The reset clears the slot marker, which alone would hide the running charge."""
+    battery = _Battery(20.0)
+    running, _gap, later = _slots(_at(23, 45), [0.30, 0.40, 0.31])
+    ctrl = _controller(
+        battery,
+        _decision(8.0),
+        _schedule({running: SLOT_PURPOSE_DEFICIT, later: SLOT_PURPOSE_DEFICIT}),
+    )
+    manager = _manager(ctrl, _balance(battery, 8.0))
+    manager.clear_curtailment_runtime = lambda *_args, **_kwargs: None
+    clock.value = running.start
+    _run(manager)
+    assert ctrl.grid_charging_active is True
+
+    clock.value = running.end
+
+    _run(manager)
+
+    assert ctrl.grid_charging_active is False
+    assert ctrl._current_price_slot_active is False
+    assert [slot.start for slot in ctrl._dynamic_pricing_schedule.selected_slots] == [
+        later.start
+    ]
+
+
+def test_withdrawn_charge_leaves_the_override_handling_in_charge(clock):
+    ctrl, manager = _running_charge(clock)
+    ctrl._dynamic_pricing_schedule = None
+    ctrl.predictive_charging_overridden = True
+    clock.value = _at(23, 50)
+
+    _run(manager)
+
+    assert ctrl.grid_charging_active is False
+    assert ctrl._active_dynamic_slot_purpose == SLOT_PURPOSE_DEFICIT
