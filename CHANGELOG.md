@@ -4,9 +4,36 @@
 
 ### Fixed
 
+- **Dynamic Pricing: Guaranteed Minimum SOC lifted the arbitrage margin off the whole plan** (#724): with the floor active, every deficit kWh could be bought above the margin, up to the evening peak. Now only the floor's own energy skips it (still capped by **Max Price Threshold (Charge)**). Thanks to @locmer and @Varashi.
 - **Discharge reserve: the floor slid down with the SOC while PV credit was left** (#700): when dearer-hour demand exceeded the stored energy, the claims equalled the stored energy and the PV credit came off that, so the reserve was always just under the SOC and never held anything. The claims now run against the stored energy plus the solar the battery can still take, and the reserve is capped at what is stored. When the sun covers all demand the battery is still released. Thanks to @MarkB-HA.
 - **Discharge reserve: a battery whose stored energy is all reserved could still discharge one step**: the reserved floor is then exactly the SOC, and float rounding put it just below a whole-percent SOC in about 2% of cases (5 + 22.999999999999996 against 28), so the battery was not held until it dropped another percent. The comparison now allows for the rounding.
+- **Discharge reserve: the horizon jumped to the next day's sunrise at midnight** (#725): the reserve then planned for the coming evening instead of the slots before this morning's sunrise, and counted that day's solar forecast as credit against it, so the battery was no longer held for a price peak at 06:00. Between midnight and sunrise the horizon now stays on this morning's sunrise, as documented; it moves on to the next sunrise once the sun is up.
+- **Daily Operation timeline: weekly full charge day projected to Max SOC** (PR#680): the projection capped the battery at the configured Max SOC while the planner charges to 100% on the weekly full charge day, so the timeline showed the battery stopping short. It now uses the same 100% ceiling until the weekly charge completes, and the next-day extension shown the evening before already charges to 100% from midnight. Thanks to @syphernl.
+- **Dynamic Pricing: evening recharge booked the evening price peak** (#721): the evening re-evaluation never applied the **Minimum Arbitrage Margin**, so without a static **Max Price Threshold (Charge)** it had no price limit at all and could grid-charge at the most expensive hours of the day while cheaper night hours followed. It now uses the same effective ceiling as the main evaluation uses for deficit charging (static threshold or arbitrage ceiling, whichever is stricter), including for a weekly full charge top-up. The exception, as in the main evaluation, is when **Guaranteed Minimum SOC** is the binding requirement (a battery under its floor band, with a floor gap larger than the remaining deficit): only the floor energy then skips the margin (#724). Thanks to @Nieass.
+- **Dynamic Pricing: running slot stuck after a re-plan that selects nothing** (#642): a re-plan that found no slots cleared the schedule but left the running slot active, so the battery stayed in `grid_charging` at full SOC and never discharged until predictive charging was switched off. The slot is now released in the same cycle and normal PD control takes over. Thanks to @syphernl.
 - **Discharge reserve: with several batteries, only some were held** (#700): the reserve was one percentage of the fleet's capacity, applied above each battery's floor. With batteries at different charge levels, floors or sizes, that floor sat below the fuller battery and above the emptier one, so the fuller one kept discharging and the fleet's usable energy, and with it the floor, followed it down. Each battery now keeps the same share of what it holds above its own floor, so the fleet keeps exactly the reserve and every battery is held at the same moment. The status shows each battery's share as `battery_reserve_soc_pct`. Thanks to @Edidotc.
+- **Chronological planning on the autumn DST change** (PR#679, #678): every plan whose horizon crossed the repeated 02:00 hour fell back with "energy interval end must be after start", so Daily Operation showed no plan for the whole day before the change. Quarter-hour boundaries now carry a fixed UTC offset, so the repeated hour sorts after its first pass and the quarter across the skipped spring hour lasts 15 minutes instead of 75. Thanks to @syphernl.
+- **Anker Solarbank 4: System Battery Cell Power counted solar twice** (#738): the sensor and the dashboard's Charge/Discharge blocks added the solar input on top of the battery pack power, which already includes it, so they now show the real charge power. The Daily Operation diary no longer counts it twice either. Thanks to @Hellsing.
+- **Grid sensor dead: automatic control now stops**: after 5 min without a valid grid reading (frozen, unavailable or never reported since restart), automatic batteries go to 0 W until it returns, with a Repair explaining why. Thanks to @tkaspersNL.
+- **Dynamic Pricing: a slot still running at midnight never stopped**: the new-day reset left grid charging on; it now stops the slot (a slot continuing past 00:00 restarts). Thanks to @StalkersGlue.
+- **Slow-starting battery stuck at 99% or excluded**: BMS cutoff detection waits out the engage grace, charge hysteresis remembers the Max SOC it latched under, and a big power step restarts the engage grace. Thanks to @tkaspersNL.
+- **Full battery got a "not delivering power" Repair after a direction switch**: the non-delivery reason now survives a charge/discharge flip, so the full-battery check ends the episode. Thanks to @tkaspersNL.
+- **"Not delivering power" Repair pointed HTTP/MQTT batteries at Modbus**: the advice now says "the battery itself or its connection". Thanks to @tkaspersNL.
+- **PD Quality showed "Sluggish" while the grid sat on target**: time inside the deadband now counts. Thanks to @tkaspersNL.
+- **PD safety timer delayed meter updates by up to 2 s**: a tick that only keeps the last command no longer restarts PD Min Cycle Interval. Thanks to @tkaspersNL.
+- **Backup Function: Bypass with load on the backup port stuck in cooldown** (#660): per-key poll times are now published together with the data. Thanks to @pando85.
+- **Configure turned off MAC tracking of an existing battery**. Thanks to @tkaspersNL.
+- **Panel: Net balance showed a green "+0.00 kWh" while hourly balance was off**: it now shows "Disabled". Thanks to @tkaspersNL.
+- **Zendure/Hoymiles: 0 kWh capacity failed to save** (#675): 0 now means automatic detection (Zendure from its packs); a positive value still overrides it. Thanks to @thomasvt1.
+- **Panel: daily-operation tooltip showed "Source" twice** for unmeasured quarters. Thanks to @tkaspersNL.
+
+### Added
+
+- **Repairs warning when Recorder excludes the sensors used to recover forecast history** (Home Consumption, solar production, excluded-device power). Thanks to @thomasvt1.
+
+### Changed
+
+- **Device registry lookups use the per-entry API on HA 2026.10+**, avoiding the `async_get_device` deprecation. Thanks to @tkaspersNL.
 
 ## [1.5.1b2] - 2026-10-13
 

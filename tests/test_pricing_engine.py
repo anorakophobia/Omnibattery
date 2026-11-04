@@ -930,6 +930,7 @@ def test_price_publication_reeval_never_runs_outside_dynamic_pricing_mode():
         _refresh_operation_blockers=lambda: None,
         _try_apply_manual_slot=_async_noop,
         _max_soc_mgr=SimpleNamespace(handle_measurement=_async_false),
+        _apply_dead_meter_fallback=_async_false,
         predictive_charging_enabled=True,
         predictive_charging_mode=PREDICTIVE_MODE_TIME_SLOT,
         # grid_charging_active True makes whichever branch runs return right
@@ -1210,6 +1211,54 @@ def test_evening_recharge_picks_informational_slots_on_price_and_arms_only_those
     assert schedule.selected_slots == [noon, afternoon]
     assert schedule.slot_purposes == {noon: "deficit", afternoon: "deficit"}
     assert schedule.deficit_charging_needed is True
+
+
+def test_evening_recharge_respects_the_arbitrage_ceiling(monkeypatch):
+    # #721: with no static ceiling, the evening top-up booked the evening peak.
+    # It must apply the same arbitrage ceiling as the main evaluation.
+    import datetime as datetime_module
+
+    now = datetime(2026, 11, 3, 16, 0)
+
+    class FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    monkeypatch.setattr(datetime_module, "datetime", FixedDateTime)
+    monkeypatch.setattr(pricing_engine.calculations, "datetime", FixedDateTime)
+
+    def _slot(hour, price):
+        start = now.replace(hour=hour, minute=0)
+        return PriceSlot(start, start + timedelta(hours=1), price)
+
+    peak = [_slot(17, 0.50), _slot(18, 0.50), _slot(19, 0.50)]
+    night = _slot(22, 0.30)
+    # 3 kWh deficit (4 kWh load, 1 kWh usable, no solar) at 1.5 kW: two hours.
+    ctrl = _evening_ctrl(
+        claim=0.0,
+        remaining_solar=0.0,
+        max_contracted_power=1500,
+        max_charge_capacity=1500,
+        min_arbitrage_margin=0.05,
+        round_trip_efficiency=0.85,
+    )
+    manager = _evening_mgr(ctrl, 0.0)
+    manager.energy_horizon_end = lambda _now: now.replace(
+        hour=0, minute=0
+    ) + timedelta(days=1, hours=7)
+    manager._parse_price_data = lambda horizon_end=None, **_kwargs: [*peak, night]
+    ceilings = []
+    manager._build_chronological_plan = lambda **kwargs: ceilings.append(
+        kwargs["price_ceiling"]
+    )
+    manager._send_evening_recharge_notification = _async_noop
+
+    asyncio.run(manager._evaluate_evening_recharge())
+
+    # Expected discharge 0.50 x 0.85 - 0.05 margin = 0.375.
+    assert ceilings == [pytest.approx(0.375)]
+    assert ctrl._dynamic_pricing_schedule.selected_slots == [night]
 
 
 def test_dynamic_pricing_soc_drop_rebuilds_the_remaining_horizon():
@@ -1997,6 +2046,45 @@ def test_extended_projection_adapter_is_read_only_for_dashboard_callers():
     assert result.diagnostics["chronological_planning_active"] is False
     with pytest.raises(TypeError):
         result.diagnostics["chronological_source"] = "mutated"
+
+
+def test_extended_projection_survives_the_autumn_dst_change():
+    """The repeated 02:00 hour must not make the projection fall back."""
+    madrid = ZoneInfo("Europe/Madrid")
+    now = datetime(2026, 10, 24, 10, 0, tzinfo=madrid)
+    horizon_end = now.replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) + timedelta(days=1, hours=12)
+    forecast = ConsumptionForecast(1.0, [1.0 / INTERVAL_COUNT] * INTERVAL_COUNT, "profile", True)
+    tracker = SimpleNamespace(
+        consumption_profile=SimpleNamespace(),
+        forecast_consumption_between=lambda *_args, **_kwargs: forecast,
+    )
+    ctrl = _controller(
+        _consumption_tracker=tracker,
+        solar_profile_mode="off",
+        _predictive_safety_margin_kwh=0.0,
+        coordinators=[],
+        _is_battery_manual_owned=lambda _coordinator: False,
+        max_contracted_power=0.0,
+        max_charge_capacity=0.0,
+    )
+
+    result = _mgr(ctrl).build_extended_chronological_projection(
+        now=now,
+        slots=[],
+        base_decision_data={
+            "avg_consumption_kwh": 1.0,
+            "solar_forecast_input": SolarForecastInput(0.0, "none"),
+        },
+        price_ceiling=None,
+        horizon_end=horizon_end,
+    )
+
+    assert result.plan is not None
+    starts = [item.start for item in result.plan.intervals]
+    assert starts == sorted(starts)
+    assert sum(1 for start in starts if start.date() == now.date() + timedelta(days=1) and start.hour == 2) == 8
 
 
 def test_extended_projection_refreshes_the_live_solar_budget():

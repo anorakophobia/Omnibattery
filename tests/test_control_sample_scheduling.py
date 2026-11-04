@@ -98,6 +98,7 @@ def _main_controller(state_holder, pd_calls):
         _try_apply_manual_slot=_async_noop,
         _phase_safety_pending=False,
         _max_soc_mgr=SimpleNamespace(handle_measurement=_max_soc_measurement),
+        _apply_dead_meter_fallback=_async_false,
         predictive_charging_enabled=False,
         previous_power=-400.0,
         previous_sensor=None,
@@ -455,6 +456,30 @@ def test_silent_sensor_uses_stale_safety_without_reapplying_pd():
 
     assert len(pd_calls) == 1
     assert controller.previous_power == previous_power
+
+
+def test_only_a_cycle_without_a_new_sample_reports_that_it_kept_the_last_command():
+    """The flag lets a safety-timer tick give PD Min Cycle Interval back."""
+    first_report = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    state_holder = {"state": _state(100, first_report)}
+    pd_calls = []
+    controller = _main_controller(state_holder, pd_calls)
+
+    def _cycle(seconds):
+        controller._cycle_kept_last_command = False
+        asyncio.run(
+            controller._run_control_cycle(now=first_report + timedelta(seconds=seconds))
+        )
+        return controller._cycle_kept_last_command
+
+    # A new sample runs P/D.
+    assert _cycle(1) is False
+    assert len(pd_calls) == 1
+    # The next tick sees the same sample and keeps the last command.
+    assert _cycle(3) is True
+    assert len(pd_calls) == 1
+    # A silent meter forces a safety recalculation, which is not kept.
+    assert _cycle(70) is False
 
 
 def _predictive_controller(state_holder, writes):

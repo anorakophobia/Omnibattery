@@ -1,12 +1,16 @@
 {
   "issues": {
+    "recorder_excluded_sensors": {
+      "title": "Sensors excluded from Recorder",
+      "description": "Recorder excludes these sensors used by Omnibattery to recover solar and household consumption profiles: {sensors}. Include them in Recorder by adjusting its include/exclude rules, then restart Home Assistant to apply the configuration. The warning clears automatically once they are included. Missing past samples cannot be recovered; live learning and existing stored profiles continue to work."
+    },
     "excluded_device_ev_type": {
       "title": "Mark your EV charger among excluded devices",
       "description": "The new energy-flow diagram (switch it on with the button in the flow card header) draws EV chargers on their own cable, next to the car. Omnibattery cannot tell which excluded device is the EV charger, so until you mark it, its power is shown on the other excluded-devices cable (the outdoor unit) and the EV cable stays empty. Open Options → Excluded devices and save your devices again, ticking \"EV charger\" on the charger (leave it unticked on the others). This only affects how the diagram is drawn, not battery control. The notice disappears once the devices have been saved."
     },
     "battery_not_delivering": {
       "title": "Battery {battery} is not delivering power",
-      "description": "{battery} has been accepting charge/discharge commands without delivering power for {minutes} minutes ({reason}). Omnibattery keeps it out of the pool and retries it every {cooldown} minutes, so the rest of the fleet covers the house meanwhile. The battery itself, its Modbus link or the bridge in front of it needs attention: check that it is not sitting in standby under its own app's control, and that the connection is not saturated. Switching Manual Battery Control on and off again for that battery often restores it."
+      "description": "{battery} has been accepting charge/discharge commands without delivering power for {minutes} minutes ({reason}). Omnibattery keeps it out of the pool and retries it every {cooldown} minutes, so the rest of the fleet covers the house meanwhile. The battery itself or its connection needs attention: check that it is not sitting in standby under its own app's control, and that the connection is not saturated. Switching Manual Battery Control on and off again for that battery often restores it."
     },
     "configured_sensor_missing": {
       "title": "Configured sensor no longer exists",
@@ -14,7 +18,11 @@
     },
     "dead_main_sensor": {
       "title": "Grid power sensor has stopped publishing",
-      "description": "The configured grid sensor {sensor} has not published a reading for {minutes} minutes. Omnibattery cannot regulate without it, so it is holding its last command of {power} W: past the stale tolerance the controller stops integrating new corrections rather than acting on a reading it knows is old. Charge and discharge limits, SOC blockers and three-phase protection all still apply, so this is not a runaway, but the batteries keep charging or discharging at that fixed power against a house load nobody is reading, until an SOC limit stops them. Note that a sensor frozen on a valid value looks perfectly healthy in Home Assistant: check that {sensor} still updates, and that the integration or bridge behind it has not wedged."
+      "description": "The configured grid sensor {sensor} has not published a reading for {minutes} minutes. Omnibattery cannot regulate without it, so it has stopped automatic control: every battery under automatic control is set to 0W (the last command was {power}W) and predictive grid charging is paused. Manual mode and manual time slots are left as they are. Automatic control resumes by itself as soon as {sensor} publishes a valid reading again. Note that a sensor frozen on a valid value looks perfectly healthy in Home Assistant: check that {sensor} still updates, and that the integration or bridge behind it has not wedged."
+    },
+    "dead_main_sensor_since_start": {
+      "title": "Grid power sensor has not reported since the restart",
+      "description": "The configured grid sensor {sensor} has not published a valid reading in the {minutes} minutes since Home Assistant started. Omnibattery cannot regulate without it. If Home Assistant did not shut down cleanly, a battery can still be running its last command from before the restart, so Omnibattery has stopped automatic control: every battery under automatic control is set to 0W and predictive grid charging is paused. Manual mode and manual time slots are left as they are. Automatic control starts by itself as soon as {sensor} publishes a valid reading. Check that {sensor} exists and updates, and that the integration or device behind it came back after the restart."
     },
     "slow_main_sensor": {
       "title": "Grid power sensor updates too slowly",
@@ -229,7 +237,7 @@
           "charge_hysteresis_percent": "Always on (minimum 2%). After reaching the top, the battery won't charge again until SOC drops to (Max SOC − hysteresis). Ex: Max SOC 100% with 2% = no charge until 98%.",
           "backup_offgrid_threshold": "Offgrid load above this value is treated as an active backup event, excluding the battery from PD control. Set higher if you have permanent loads (router, cameras) on the offgrid port.",
           "full_charge_voltage_taper_enabled": "When the target is 100%, limit charge to 200 W from 3.48 V max cell voltage. Venus E models stop at 3.60 V to measure imbalance after 60 seconds; Venus A/D with coupled packs keep charging at 200 W until the BMS cuts off.",
-          "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown.",
+          "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Set 0 for automatic detection from supported battery models/packs. Enter a positive value to override detection or if the packs are unknown. Sessy requires its actual capacity.",
           "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired, or Unassigned when it is outside the protected phase layout. An unassigned battery is outside the three-phase envelope and continues normal automatic operation.",
           "dc_pv_connected": "Venus A/D only. Enable this when solar panels are wired to the battery's MPPT inputs. Disable it when those inputs are unused so battery power remains based on AC power without adding MPPT production.",
           "track_mac": "The MAC address is the battery's permanent hardware address: unlike the IP address above, it never changes. Home Assistant uses it to find the battery again and update the IP address by itself. Behind a Wi-Fi-to-LAN bridge or a powerline adapter the address you see is the adapter's own, shared with everything behind it, so tracking only works while a single battery sits behind that adapter.",
@@ -915,7 +923,7 @@
           "charge_hysteresis_percent": "Always on (minimum 2%). After reaching the top, the battery won't charge again until SOC drops to (Max SOC − hysteresis). Ex: Max SOC 100% with 2% = no charge until 98%.",
           "backup_offgrid_threshold": "Offgrid load above this value is treated as an active backup event, excluding the battery from PD control. Set higher if you have permanent loads (router, cameras) on the offgrid port.",
           "full_charge_voltage_taper_enabled": "When the target is 100%, limit charge to 200 W from 3.48 V max cell voltage. Venus E models stop at 3.60 V to measure imbalance after 60 seconds; Venus A/D with coupled packs keep charging at 200 W until the BMS cuts off.",
-          "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Sessy requires its actual capacity; for other batteries, leave at 0 if unknown.",
+          "battery_capacity_kwh": "Nominal usable capacity of the battery pack. Used to calculate stored energy and efficiency from SOC. Set 0 for automatic detection from supported battery models/packs. Enter a positive value to override detection or if the packs are unknown. Sessy requires its actual capacity.",
           "battery_phase": "Physical AC phase (L1/L2/L3) where this battery is wired, or Unassigned when it is outside the protected phase layout. An unassigned battery is outside the three-phase envelope and continues normal automatic operation.",
           "dc_pv_connected": "Venus A/D only. Enable this when solar panels are wired to the battery's MPPT inputs. Disable it when those inputs are unused so battery power remains based on AC power without adding MPPT production.",
           "track_mac": "The MAC address is the battery's permanent hardware address: unlike the IP address above, it never changes. Home Assistant uses it to find the battery again and update the IP address by itself. Behind a Wi-Fi-to-LAN bridge or a powerline adapter the address you see is the adapter's own, shared with everything behind it, so tracking only works while a single battery sits behind that adapter.",

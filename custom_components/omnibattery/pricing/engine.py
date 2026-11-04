@@ -2995,6 +2995,20 @@ class PricingManager:
                 intervals, usable, usable_capacity_kwh=usable + headroom
             )
             required = max(0.0, float(decision_data.get("planned_grid_charge_kwh", 0.0) or 0.0))
+            # Only guaranteed-floor energy may skip the arbitrage margin (#724):
+            # the reactive under-floor gap beyond the ordinary deficit, or the
+            # planner's floor requirement beyond ordinary pre-sunrise depletion.
+            premium_kwh = 0.0
+            if decision_data.get("floor_active", False):
+                premium_kwh = max(
+                    0.0,
+                    float(decision_data.get("floor_deficit_kwh", 0.0) or 0.0)
+                    - max(
+                        0.0,
+                        float(decision_data.get("avg_consumption_kwh", 0.0) or 0.0)
+                        - float(decision_data.get("total_available_kwh", 0.0) or 0.0),
+                    ),
+                )
             if (
                 not diagnostic_only
                 and getattr(self._controller, "_predictive_min_soc_floor_enabled", False)
@@ -3062,6 +3076,7 @@ class PricingManager:
                 if floor_required > hysteresis_kwh or (under_band and gap > 0.0):
                     # The floor requirement dominates ordinary depletion until
                     # sunrise. Preserve later, larger ordinary requirements.
+                    ordinary_deadlines = deadlines
                     combined: list = []
                     maximum = 0.0
                     for item in sorted(
@@ -3072,6 +3087,18 @@ class PricingManager:
                             combined.append(item)
                             maximum = item.required_cumulative_kwh
                     deadlines = combined
+                    premium_kwh = max(
+                        premium_kwh,
+                        floor_required
+                        - max(
+                            (
+                                item.required_cumulative_kwh
+                                for item in ordinary_deadlines
+                                if item.deadline <= solar_start_dt
+                            ),
+                            default=0.0,
+                        ),
+                    )
                     required = max(required, floor_required)
                     decision_data["should_charge"] = True
                     decision_data["floor_active"] = True
@@ -3097,6 +3124,8 @@ class PricingManager:
                     usable_initial_kwh=usable,
                     max_price_threshold=price_ceiling,
                     deadlines=tuple(deadlines),
+                    premium_kwh=premium_kwh,
+                    premium_price_threshold=self._controller.max_price_threshold,
                 )
             )
             plan = evaluation.plan
@@ -3575,19 +3604,6 @@ class PricingManager:
                 decision_data=decision_data,
                 price_ceiling=ceiling,
             )
-            if (
-                chronological_plan is not None
-                and decision_data.get("floor_active", False)
-            ):
-                # Guaranteed-floor energy bypasses the optimization-only
-                # arbitrage margin, while the user's explicit ceiling remains
-                # authoritative.
-                chronological_plan = self._build_chronological_plan(
-                    now=eval_now,
-                    slots=slots,
-                    decision_data=decision_data,
-                    price_ceiling=self._controller.max_price_threshold,
-                )
             deficit_charging_needed = bool(decision_data.get("should_charge", False))
             if deficit_charging_needed and chronological_plan is not None:
                 deficit_kwh = float(
@@ -5064,11 +5080,21 @@ class PricingManager:
         decision_data["should_charge"] = True
         decision_data["energy_deficit_kwh"] = evening_deficit_kwh
         decision_data["planned_grid_charge_kwh"] = planned_evening_charge_kwh
+        # Same arbitrage-aware ceiling as the main evaluation: a deficit top-up
+        # must not buy energy that costs more than it can displace later.
+        price_ceiling, _ = calculations.effective_charge_ceiling(
+            slots,
+            hours_needed,
+            self._controller.max_price_threshold,
+            self._controller.min_arbitrage_margin,
+            self._controller.round_trip_efficiency,
+            now=now,
+        )
         chronological_plan = self._build_chronological_plan(
             now=now,
             slots=slots,
             decision_data=decision_data,
-            price_ceiling=self._controller.max_price_threshold,
+            price_ceiling=price_ceiling,
         )
         if chronological_plan is not None:
             selected = [
@@ -5082,11 +5108,14 @@ class PricingManager:
             selected = calculations.select_cheapest_hours(
                 additional_slots,
                 hours_needed,
-                self._controller.max_price_threshold,
+                price_ceiling,
             )
 
         if not selected:
-            _LOGGER.warning("Evening recharge: no slots below price threshold")
+            _LOGGER.warning(
+                "Evening recharge: no new slots selected (price ceiling %s)",
+                "none" if price_ceiling is None else f"{price_ceiling:.4f}",
+            )
             return
 
         # --- Merge into schedule ---
@@ -5629,6 +5658,8 @@ class PricingManager:
         if self._controller._dynamic_pricing_evaluated_date is not None:
             if today > self._controller._dynamic_pricing_evaluated_date:
                 _LOGGER.info("Dynamic pricing: new day — resetting schedule")
+                if self._controller._current_price_slot_active:
+                    await self._stop_dynamic_price_slot("slot_ended", write_idle=False)
                 midnight = now.replace(
                     hour=0, minute=0, second=0, microsecond=0
                 )
@@ -5716,6 +5747,16 @@ class PricingManager:
                     self._controller._predictive_charge_target_soc = deficit_target
                     if deficit_target is None:
                         self._controller._grid_charging_initialized = False
+
+        # A re-plan that selects nothing clears the schedule while a slot may
+        # still be running. Phase 4 below only looks at an existing schedule,
+        # so release the slot here or grid charging stays active for good.
+        if (
+            self._controller._current_price_slot_active
+            and not self._controller._dynamic_pricing_schedule
+            and not self._controller.predictive_charging_overridden
+        ):
+            await self._stop_dynamic_price_slot("schedule_cleared", write_idle=False)
 
         # Phase 4: Check if we're in a selected typed price slot.
         if self._controller._dynamic_pricing_schedule and not self._controller.predictive_charging_overridden:

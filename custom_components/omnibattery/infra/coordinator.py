@@ -444,6 +444,7 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
         setattr(self, CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, full_charge_voltage_taper_enabled)
         self._hysteresis_active = False  # Tracks if battery reached max_soc (for hysteresis)
         self._hysteresis_base_soc = None  # SOC that triggered hysteresis (used as threshold base)
+        self._hysteresis_latch_max_soc = None  # max_soc in force when that base was latched
         self._scan_counter = 0
         self.lock = asyncio.Lock()
         self._is_shutting_down = False  # Flag to suppress errors during shutdown
@@ -1301,6 +1302,10 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
 
         now = utcnow()
         updated_data = {}
+        # Per-key read times for readings_from_same_poll(), published together
+        # with updated_data: the loop below yields between groups, so a check
+        # made mid-poll must not see a fresh time next to the previous value.
+        updated_times = {}
         critical_groups_attempted = set()
         critical_groups_succeeded = set()
 
@@ -1510,7 +1515,7 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
                         continue
 
                 updated_data[key] = value
-                self._key_update_times[key] = now
+                updated_times[key] = now
                 stored += 1
                 if DEBUG_POLL_SENSOR_VALUES and group.scan_interval == "high":
                     _LOGGER.debug("[%s] Updated %s: %s", self.name, key, value)
@@ -1605,6 +1610,7 @@ class MarstekVenusDataUpdateCoordinator(DataUpdateCoordinator):
 
         # Update the coordinator's data
         self.data.update(updated_data)
+        self._key_update_times.update(updated_times)
 
         update_backup_discharge = getattr(
             self, "_update_backup_discharge_energy", None

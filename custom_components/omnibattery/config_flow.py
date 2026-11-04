@@ -61,6 +61,7 @@ from .config_backup import (
 )
 from .infra.lifecycle import clear_reload_pending, mark_reload_pending
 from .infra.entity_naming import is_omnibattery_solar_entity
+from .infra.device_lookup import get_entry_device
 from .solar_forecast import normalize_solar_forecast_config
 from .const import (
     DOMAIN,
@@ -2249,20 +2250,20 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
             _schema[vol.Required(CONF_DC_PV_CONNECTED, default=True)] = BooleanSelector()
         if brand not in ("zendure", "anker", "sessy", "hoymiles", "huawei"):
             _schema[vol.Required(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, default=DEFAULT_FULL_CHARGE_VOLTAGE_TAPER_ENABLED)] = bool
-        if brand in ("sessy", "zendure"):
-            # Neither reports a nominal capacity, and leaving it at 0 silently
-            # breaks system SOC, cycles, predictive charging and pricing math.
+        if brand == "sessy":
+            # Sessy does not report a nominal capacity or identifiable packs.
             _schema[vol.Required("battery_capacity_kwh")] = NumberSelector(
                 NumberSelectorConfig(min=0.01, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
-        elif brand == "hoymiles":
+        elif brand in ("zendure", "hoymiles"):
             _schema[
                 vol.Optional(
                     "battery_capacity_kwh",
-                    default=_hoymiles_capacity_default(self._current_battery_data),
+                    default=(_hoymiles_capacity_default(self._current_battery_data)
+                             if brand == "hoymiles" else 0.0),
                 )
             ] = NumberSelector(
-                NumberSelectorConfig(min=0.01, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
+                NumberSelectorConfig(min=0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
         if self.config_data.get(CONF_THREE_PHASE_ENABLED):
             # Keep the established L1 suggestion for a brand-new setup while
@@ -2898,7 +2899,7 @@ class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMA
                 ent_reg.async_update_entity(ent.entity_id, new_unique_id=new_uid)
 
         dev_reg = dr.async_get(self.hass)
-        old_dev = dev_reg.async_get_device(identifiers={(DOMAIN, old_device_id)})
+        old_dev = get_entry_device(dev_reg, (DOMAIN, old_device_id), entry.entry_id)
         if old_dev is not None:
             new_identifiers = set(old_dev.identifiers)
             new_identifiers.discard((DOMAIN, old_device_id))
@@ -3815,7 +3816,7 @@ class OptionsFlowHandler(OptionsFlow):
             if slave != 1:
                 key = f"{key}_{slave}"
             dev_reg = dr.async_get(self.hass)
-            if device := dev_reg.async_get_device(identifiers={(DOMAIN, key)}):
+            if device := get_entry_device(dev_reg, (DOMAIN, key), self.config_entry.entry_id):
                 dev_reg.async_remove_device(device.id)
             return result
 
@@ -4067,15 +4068,22 @@ class OptionsFlowHandler(OptionsFlow):
         """Select battery brand for the current battery slot."""
         battery_num = self.battery_index + 1
         current_batteries = self.config_entry.data.get("batteries", [])
-        current_brand = (
-            current_batteries[self.battery_index].get("brand", "marstek")
+        current_battery = (
+            current_batteries[self.battery_index]
             if self.battery_index < len(current_batteries)
-            else "marstek"
+            else {}
         )
+        current_brand = current_battery.get("brand", "marstek")
 
         if user_input is not None:
             brand = user_input["brand"]
-            self._current_battery_data = {"brand": brand}
+            # No connection step asks for MAC tracking, so the stored opt-in and
+            # MAC ride along to battery_limits, the form that shows them.
+            self._current_battery_data = {
+                "brand": brand,
+                CONF_TRACK_MAC: current_battery.get(CONF_TRACK_MAC, False),
+                CONF_MAC: current_battery.get(CONF_MAC, ""),
+            }
             if brand == "zendure":
                 return await self.async_step_battery_connection_zendure()
             if brand == "esphome":
@@ -4911,7 +4919,7 @@ class OptionsFlowHandler(OptionsFlow):
             ] = BooleanSelector()
         if brand not in ("zendure", "anker", "sessy", "hoymiles", "huawei"):
             _schema[vol.Required(CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED, default=defaults[CONF_FULL_CHARGE_VOLTAGE_TAPER_ENABLED])] = bool
-        if brand in ("sessy", "zendure"):
+        if brand == "sessy":
             saved_capacity = float(defaults["battery_capacity_kwh"])
             capacity_field = (
                 vol.Required("battery_capacity_kwh", default=saved_capacity)
@@ -4921,9 +4929,9 @@ class OptionsFlowHandler(OptionsFlow):
             _schema[capacity_field] = NumberSelector(
                 NumberSelectorConfig(min=0.01, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
-        elif brand == "hoymiles":
+        elif brand in ("zendure", "hoymiles"):
             _schema[vol.Optional("battery_capacity_kwh", default=defaults["battery_capacity_kwh"])] = NumberSelector(
-                NumberSelectorConfig(min=0.01, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
+                NumberSelectorConfig(min=0, max=100, step=0.01, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
             )
         if self.config_entry.data.get(
             CONF_THREE_PHASE_ENABLED,

@@ -234,6 +234,7 @@ from .const import (
     MISSING_SENSOR_ISSUE_DELAY_S,
     HOT_PATH_READBACK_MAX_LATENCY_S,
     DISCHARGE_ENGAGE_GRACE_S,
+    ENGAGE_GRACE_STEP_FACTOR,
     HIGH_SOC_CHARGE_TAPER_FLOOR,
     HIGH_SOC_CHARGE_TAPER_GRACE_S,
     IDLE_RUNAWAY_POWER_W,
@@ -257,6 +258,7 @@ from .control.high_price_discharge import HighPriceDischargeManager
 from .control.surplus_price_hold import SurplusPriceHoldManager
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
 from .infra.mac_tracking import publishable_macs
+from .infra.device_lookup import get_entry_device
 from .tracking.hourly_balance import HourlyBalanceManager
 from .tracking.non_responsive_tracker import NonResponsiveTracker
 from .tracking.daily_timeline import (
@@ -660,6 +662,23 @@ def _delivered_toward(data: dict, cell_power: float, *, is_charge: bool) -> floa
     return max(0.0, delivered)
 
 
+def _charge_hysteresis_latch_is_stale(coordinator) -> bool:
+    """Whether max_soc was raised above the ceiling the hysteresis latched under.
+
+    Such a latch captured a lower, since-raised ceiling (e.g. Target SOC bumped
+    back up after a temporary reduction) and must not hold the battery below the
+    new target. A latch set below the ceiling by a BMS cutoff or the top-cell
+    voltage is not stale: it holds until SOC falls through the hysteresis band,
+    like a latch at the ceiling. A latch without a recorded ceiling is judged
+    against its base SOC.
+    """
+    base = coordinator._hysteresis_base_soc
+    if base is None:
+        return False
+    latched_under = getattr(coordinator, "_hysteresis_latch_max_soc", None)
+    return coordinator.max_soc > (base if latched_under is None else latched_under)
+
+
 class ChargeDischargeController:
     """Controller to manage charge/discharge logic for all batteries."""
 
@@ -716,6 +735,8 @@ class ChargeDischargeController:
         # belongs per-battery in the power distribution, not in the loop cadence.
         self._min_cycle_interval_s = config_entry.data.get(CONF_PD_MIN_CYCLE_INTERVAL, DEFAULT_PD_MIN_CYCLE_INTERVAL)
         self._last_cycle_monotonic = 0.0
+        # Set by a cycle that found no new meter sample and kept the last command.
+        self._cycle_kept_last_command = False
         self._background_tasks: set[asyncio.Task] = set()
         self._startup_dynamic_pricing_task: asyncio.Task | None = None
         self._unloading = False
@@ -838,6 +859,7 @@ class ChargeDischargeController:
         # Stale sensor detection
         self._last_sensor_report_time = None    # datetime of last real sensor publication (HA last_reported)
         self._last_valid_meter_publication = None  # same clock, but read every cycle for health
+        self._meter_wait_since = None           # utc time liveness began waiting for a first valid reading
         self._last_sensor_cadence_time = None   # latest publication consumed by the cadence detector
         self._last_control_sample_value = None  # last transformed value consumed by P/D
         self._control_sample_is_new = True      # result of the current control-loop sample
@@ -847,7 +869,10 @@ class ChargeDischargeController:
         self._control_lock = asyncio.Lock()     # serialize control cycle across timer + sensor-event triggers
         self._grid_at_min_soc_last_ts = None     # last accumulation timestamp for grid-at-min-soc kWh integration
         self._slow_sensor_issue_created = False  # slow-sensor repair currently raised
-        self._dead_sensor_issue_created = False  # dead-sensor repair currently raised
+        self._dead_sensor_issue_created = None   # dead-sensor repair raised (None: not checked yet this run)
+        self._main_sensor_dead = False          # meter silent past MAIN_SENSOR_DEAD_S
+        self._main_sensor_never_reported = False  # dead without a single valid reading in this run
+        self._dead_meter_fallback_engaged = False  # automatic batteries stopped for it
         self._slow_sensor_intervals = 0         # consecutive slow sensor intervals
         self._fast_sensor_intervals = 0         # consecutive fast intervals used to clear the repair
 
@@ -1396,6 +1421,7 @@ class ChargeDischargeController:
         self._grid_filter_ema = None
         self._last_sensor_report_time = None
         self._last_valid_meter_publication = None
+        self._meter_wait_since = None
         self._last_sensor_cadence_time = None
         self._last_control_sample_value = None
         self._control_sample_is_new = True
@@ -1738,7 +1764,11 @@ class ChargeDischargeController:
                     )
                     if math.isfinite(candidate):
                         offgrid_power = candidate
-                cell_power = -ac_power - offgrid_power + direct_pv_w
+                # Only MPPT PV is added: Anker SB4's ac_power is the negated pack
+                # power, which already includes its aggregate PV (#738).
+                cell_power = -ac_power - offgrid_power + (
+                    direct_pv_w if has_mppt else 0.0
+                )
 
             measured = True
             total_power += cell_power
@@ -1917,6 +1947,9 @@ class ChargeDischargeController:
         """Return safe battery snapshots for the pure future projection."""
         from .pricing.daily_timeline import BatteryProjectionInput
 
+        # A pending weekly full charge lifts the ceiling to 100%, the same
+        # ceiling every planner charge path uses (_charge_ceiling_soc).
+        weekly_pending = ChargeDischargeController._weekly_full_charge_pending(self)
         result = []
         for index, coordinator in enumerate(getattr(self, "coordinators", ())):
             manual_owned = self._is_battery_manual_owned(coordinator)
@@ -1943,8 +1976,12 @@ class ChargeDischargeController:
                     min_soc_pct=self._daily_operation_float(
                         getattr(coordinator, "min_soc", 0.0), 0.0
                     ),
-                    max_soc_pct=self._daily_operation_float(
-                        getattr(coordinator, "max_soc", 100.0), 100.0
+                    max_soc_pct=(
+                        100.0
+                        if weekly_pending
+                        else self._daily_operation_float(
+                            getattr(coordinator, "max_soc", 100.0), 100.0
+                        )
                     ),
                     charge_power_w=max(0.0, charge_limit),
                     discharge_power_w=max(0.0, discharge_limit),
@@ -2214,6 +2251,9 @@ class ChargeDischargeController:
                 setpoint_enabled=setpoint_enabled,
                 setpoint_reached=setpoint_reached,
                 weekly_charge_bypasses_delay=weekly_charge_bypasses_delay,
+                weekly_full_charge_tomorrow=(
+                    ChargeDischargeController._weekly_full_charge_tomorrow(self, now)
+                ),
                 delay_active=delay_active,
                 delay_planned=delay_planned,
                 delay_unlock=runtime_delay_unlock,
@@ -3624,6 +3664,15 @@ class ChargeDischargeController:
             or self._balance_monitor_overrides_delay()
         )
 
+    def _weekly_full_charge_tomorrow(self, now: datetime) -> bool:
+        """Return True when tomorrow is the configured weekly full charge day."""
+        from .const import WEEKDAY_MAP
+
+        if not getattr(self, "weekly_full_charge_enabled", False):
+            return False
+        target = WEEKDAY_MAP.get(getattr(self, "weekly_full_charge_day", None))
+        return target is not None and (now.weekday() + 1) % 7 == target
+
     def _weekly_full_charge_pending(self) -> bool:
         """Return True while a weekly full charge still has to reach 100% today."""
         manager = getattr(self, "_weekly_charge_mgr", None)
@@ -3834,15 +3883,9 @@ class ChargeDischargeController:
                     _vmax = control_vmax(coordinator)
                     if _vmax is not None:
                         taper_at_top_voltage = _vmax >= NORMAL_BALANCE_PAUSE_CELL_VOLTAGE
-                # If the configured ceiling was raised above the latched base SOC,
-                # the latch is stale: it captured a lower, since-raised ceiling
-                # (e.g. Target SOC bumped back up after a temporary reduction).
-                # Clear it so charge can resume toward the new target; a genuine
-                # top-of-charge re-arms immediately below.
-                if (
-                    coordinator._hysteresis_base_soc is not None
-                    and coordinator.max_soc > coordinator._hysteresis_base_soc
-                ):
+                # Clear a stale latch so charge can resume toward the raised
+                # target; a genuine top-of-charge re-arms immediately below.
+                if _charge_hysteresis_latch_is_stale(coordinator):
                     coordinator._hysteresis_active = False
                     coordinator._hysteresis_base_soc = None
 
@@ -3852,6 +3895,7 @@ class ChargeDischargeController:
                         # Base stays the aggregate: it answers "how far must the
                         # whole battery fall before recharging", not "is it full".
                         coordinator._hysteresis_base_soc = current_soc
+                        coordinator._hysteresis_latch_max_soc = coordinator.max_soc
 
                 hysteresis_base = (
                     coordinator._hysteresis_base_soc
@@ -4374,14 +4418,9 @@ class ChargeDischargeController:
                         _taper_at_top = False
                         if effective_max_soc >= 100 and _vmax_hysteresis is not None:
                             _taper_at_top = _vmax_hysteresis >= NORMAL_BALANCE_PAUSE_CELL_VOLTAGE
-                        # If the configured ceiling was raised above the latched
-                        # base SOC, the latch is stale (Target SOC bumped back up
-                        # after a temporary reduction). Clear it so charge resumes
-                        # toward the new target; a genuine top re-arms below.
-                        if (
-                            coordinator._hysteresis_base_soc is not None
-                            and coordinator.max_soc > coordinator._hysteresis_base_soc
-                        ):
+                        # Clear a stale latch so charge resumes toward the
+                        # raised target; a genuine top re-arms below.
+                        if _charge_hysteresis_latch_is_stale(coordinator):
                             coordinator._hysteresis_active = False
                             coordinator._hysteresis_base_soc = None
 
@@ -4390,6 +4429,7 @@ class ChargeDischargeController:
                             # Capture the actual SOC that triggered hysteresis (may be 100% after full charge)
                             if coordinator._hysteresis_base_soc is None:
                                 coordinator._hysteresis_base_soc = current_soc
+                                coordinator._hysteresis_latch_max_soc = coordinator.max_soc
 
                         # Use actual peak SOC as threshold base (handles post-full-charge case)
                         hysteresis_base = coordinator._hysteresis_base_soc if coordinator._hysteresis_base_soc else coordinator.max_soc
@@ -4435,6 +4475,7 @@ class ChargeDischargeController:
                         coordinator._hysteresis_active = True
                         if coordinator._hysteresis_base_soc is None:
                             coordinator._hysteresis_base_soc = current_soc
+                            coordinator._hysteresis_latch_max_soc = coordinator.max_soc
                         _LOGGER.debug(
                             "%s: BMS cutoff at %d%% — activating hysteresis",
                             coordinator.name, current_soc,
@@ -5073,7 +5114,7 @@ class ChargeDischargeController:
 
         # === STEP 3: Calculate Energy Balance ===
         # Get battery configuration
-        total_capacity_kwh = sum(c.data.get("battery_total_energy", 0) for c in coordinators_with_data)
+        total_capacity_kwh = sum(c.data.get("battery_total_energy", 0) or 0 for c in coordinators_with_data)
         if total_capacity_kwh <= 0:
             _LOGGER.error(
                 "Invalid total battery capacity (%.2f kWh) - cannot evaluate predictive charging",
@@ -5391,6 +5432,7 @@ class ChargeDischargeController:
                 # Consumers (the per-battery stop target) need to know the floor
                 # is the binding constraint here too, not only in the balanced
                 # branch below.
+                "floor_deficit_kwh": floor_deficit_kwh,
                 "floor_active": (
                     floor_deficit_kwh > 0
                     and floor_deficit_kwh > avg_consumption_kwh - total_available_kwh
@@ -5496,6 +5538,7 @@ class ChargeDischargeController:
             "days_in_history": days_in_history,
             "solar_surplus_kwh": solar_surplus_kwh,
             "floor_active": floor_active,
+            "floor_deficit_kwh": floor_deficit_kwh,
             "weekly_full_charge_active": weekly_active,
             "consumption_scope": consumption_scope,
             "consumption_forecast_source": (
@@ -5659,7 +5702,7 @@ class ChargeDischargeController:
         # Per-battery gap to the charge ceiling (kWh); 100% on a weekly day.
         gaps: dict = {}
         for c in coordinators_with_data:
-            capacity = c.data.get("battery_total_energy", 0)
+            capacity = c.data.get("battery_total_energy", 0) or 0
             current_soc = c.data.get("battery_soc", 0)
             ceiling = ChargeDischargeController._charge_ceiling_soc(self, c)
             gaps[c] = max(0.0, (ceiling - current_soc) / 100.0 * capacity)
@@ -5699,7 +5742,7 @@ class ChargeDischargeController:
 
         targets: dict = {}
         for c in coordinators_with_data:
-            capacity = c.data.get("battery_total_energy", 0)
+            capacity = c.data.get("battery_total_energy", 0) or 0
             current_soc = c.data.get("battery_soc", 0)
             ceiling = ChargeDischargeController._charge_ceiling_soc(self, c)
             if capacity <= 0:
@@ -6915,6 +6958,42 @@ class ChargeDischargeController:
             self._discharge_engage_started[coordinator] = dt_util.utcnow()
             self._non_responsive.clear(coordinator, delivering=False)
             coordinator._low_soc_refusal_started = None
+        # A large step up within the same direction restarts only its engage
+        # clock: the battery was following the smaller command and needs time to
+        # ramp. The non-responsive episode, the taper clock and the low-SOC
+        # refusal clock carry on, so a stall that outlasts the grace still counts.
+        if (
+            not preserve_non_responsive_episode
+            and net_sign != 0
+            and self._last_commanded_net_sign.get(coordinator) == net_sign
+        ):
+            is_charge = net_sign == 1
+            previous_command = getattr(
+                coordinator,
+                "commanded_charge_power" if is_charge else "commanded_discharge_power",
+                0,
+            ) or 0
+            previous_power = (coordinator.data or {}).get("battery_power")
+            if (
+                previous_command > 0
+                and abs(net_power) >= ENGAGE_GRACE_STEP_FACTOR * previous_command
+                and previous_power is not None
+                and _delivered_toward(
+                    coordinator.data, float(previous_power), is_charge=is_charge
+                ) >= 0.10 * previous_command
+            ):
+                engage_times = (
+                    self._charge_engage_started
+                    if is_charge
+                    else self._discharge_engage_started
+                )
+                engage_times[coordinator] = dt_util.utcnow()
+                _LOGGER.debug(
+                    "[%s] %s command stepped up %dW -> %dW — restarting the "
+                    "engage grace",
+                    coordinator.name, "Charge" if is_charge else "Discharge",
+                    previous_command, abs(net_power),
+                )
         # Mirror stamp for the opposite transition: a flip from a move into idle
         # starts the ramp-down grace for the idle-runaway judgment below. A
         # battery idle from the start (no prior commanded move) gets no grace —
@@ -7276,9 +7355,10 @@ class ChargeDischargeController:
         if within_engage_grace:
             # A slow inverter (Zendure HTTP) takes seconds to reverse into
             # discharge from charge/idle — up to ~20-30 s on a cold
-            # charge→discharge transition. 0 W out this soon after the
-            # direction flip is engage latency, not a fault; give it time
-            # before judging. The flip already reset the tracker.
+            # charge→discharge transition — or to ramp after a large step up.
+            # 0 W out this soon after the direction flip or step is engage
+            # latency, not a fault; give it time before judging. A flip
+            # already reset the tracker; a step leaves its count in place.
             _LOGGER.debug(
                 "[%s] No %s delivered yet but within %ds engage "
                 "grace — inverter still engaging, not a fault",
@@ -7940,8 +8020,17 @@ class ChargeDischargeController:
                 _LOGGER.debug("Control cycle already running; skipping overlapping trigger.")
             return
         async with self._control_lock:
+            previous_cycle_monotonic = self._last_cycle_monotonic
             self._last_cycle_monotonic = time.monotonic()
+            self._cycle_kept_last_command = False
             await self._run_control_cycle(now)
+            # A safety-timer tick that found no new meter sample and kept the
+            # last command gives PD Min Cycle Interval back, so it doesn't hold
+            # off the next meter update. A tick that acted on a new sample
+            # still counts: with a fast meter it usually does, and leaving it
+            # out would let ticks add cycles on top of the paced meter updates.
+            if now is not None and self._cycle_kept_last_command:
+                self._last_cycle_monotonic = previous_cycle_monotonic
 
     def _schedule_no_pd_debounced_run(self):
         """Arm a one-shot deferred control cycle for the no-PD command delay.
@@ -8906,13 +8995,18 @@ class ChargeDischargeController:
           whose inputs stopped moving. Nothing is logged at all, because from
           the state machine's point of view the entity is perfectly healthy.
 
-        In both cases the meter's own last publication stops advancing and the
-        loop holds the last command indefinitely: past MAX_SENSOR_STALE_S the stale
-        safety recalculation zeroes the P scale and the derivative, so the
-        adjustment is exactly 0. The structural guards above still run, so this
-        is not a runaway - the exposure is bounded by the SOC blockers, not by
-        time, which on a multi-battery fleet is hours of exporting or importing
-        against a house whose load is no longer being read.
+        In both cases the meter's own last publication stops advancing. A meter
+        that has not published a usable reading at all in this run has no
+        publication to age, so its age counts from when this check started
+        waiting for one, once Home Assistant has finished starting. A crash
+        skips the unload that idles the batteries, and most brands hold the
+        last command on their own, so without this a meter that never comes
+        back would leave that command running with no repair raised. Past
+        MAX_SENSOR_STALE_S the stale safety recalculation zeroes the P scale and
+        the derivative, so the loop holds its last command; past
+        MAIN_SENSOR_DEAD_S this check sets ``_main_sensor_dead`` and
+        ``_apply_dead_meter_fallback`` stops automatic control, so the exposure
+        is bounded in time rather than only by the SOC blockers.
 
         Called before every early return in the cycle, for the same reason the
         other health checks are: manual mode, a block or a predictive handler
@@ -8920,12 +9014,25 @@ class ChargeDischargeController:
         never be cleared.
         """
         if not self.consumption_sensor:
+            self._main_sensor_dead = False
             return
         issue_id = f"dead_main_sensor_{self.config_entry.entry_id}"
 
         report_time = self._live_sensor_report_time()
-        # None means the meter has never published a usable reading in this run:
-        # a restart or an entity not set up yet, not a fault.
+        waiting = report_time is None
+        if waiting:
+            # Never a usable reading in this run. While Home Assistant is still
+            # starting, the integration behind the meter may simply not be set
+            # up yet; after that, the wait itself is the age. Once started it
+            # keeps counting, so a shutdown cannot release the fallback.
+            if (
+                self._meter_wait_since is None
+                and self.hass.state == CoreState.running
+            ):
+                self._meter_wait_since = (
+                    now if isinstance(now, datetime) else dt_util.utcnow()
+                )
+            report_time = self._meter_wait_since
         age_s = (
             self._sensor_age_seconds(report_time, now)
             if report_time is not None
@@ -8933,19 +9040,39 @@ class ChargeDischargeController:
         )
 
         if age_s < MAIN_SENSOR_DEAD_S:
-            if self._dead_sensor_issue_created:
+            self._main_sensor_dead = False
+            # Not known yet on the first check: the issue is persistent, so one
+            # raised before a restart is restored as active, and only this check
+            # would ever clear it.
+            if self._dead_sensor_issue_created is not False:
                 self._dead_sensor_issue_created = False
                 ir.async_delete_issue(self.hass, DOMAIN, issue_id)
             return
 
+        self._main_sensor_dead = True
+        self._main_sensor_never_reported = waiting
+        if self._last_valid_meter_publication is None and not waiting:
+            # Pin the age to the tracked read time: the fallback clears that
+            # timestamp, and without a high-water mark the age would collapse
+            # to 0 and release the fallback the very next cycle.
+            self._last_valid_meter_publication = report_time
         if self._dead_sensor_issue_created:
             return
         self._dead_sensor_issue_created = True
-        _LOGGER.warning(
-            "Grid sensor %s has not published for %.0f minutes - holding the last "
-            "command of %.0fW until the SOC limits stop it",
-            self.consumption_sensor, age_s / 60, self.previous_power,
-        )
+        # Raised ahead of the fallback in the same cycle, so previous_power is
+        # still the command that ran blind. Without a reading in this run there
+        # is no such command to name: what may still be running is whatever the
+        # battery was told before the restart. The warning log belongs to the
+        # fallback, which is what actually acts on it.
+        placeholders = {
+            "sensor": self.consumption_sensor,
+            "minutes": f"{age_s / 60:.0f}",
+        }
+        if waiting:
+            translation_key = "dead_main_sensor_since_start"
+        else:
+            translation_key = "dead_main_sensor"
+            placeholders["power"] = f"{abs(self.previous_power):.0f}"
         ir.async_create_issue(
             self.hass,
             DOMAIN,
@@ -8954,13 +9081,85 @@ class ChargeDischargeController:
             is_persistent=True,
             issue_domain=DOMAIN,
             severity=ir.IssueSeverity.WARNING,
-            translation_key="dead_main_sensor",
-            translation_placeholders={
-                "sensor": self.consumption_sensor,
-                "minutes": f"{age_s / 60:.0f}",
-                "power": f"{abs(self.previous_power):.0f}",
-            },
+            translation_key=translation_key,
+            translation_placeholders=placeholders,
         )
+
+    async def _apply_dead_meter_fallback(self) -> bool:
+        """Stop automatic control while the main grid sensor is dead.
+
+        ``_check_main_sensor_liveness`` decides; this acts. Holding the last
+        command against a house nobody is reading is bounded only by the SOC
+        blockers, so once the meter has been silent for MAIN_SENSOR_DEAD_S every
+        automatic battery goes to 0W and stays there until it publishes again.
+        An immediate stop rather than a ramp: the command has already run blind
+        for minutes, and the operation blocks stop the same way.
+
+        The caller places this after manual mode, manual slots and max-SOC
+        balancing, which are not driven by the meter, and before predictive
+        dispatch: a predictive grid charge regulates its import ceiling on the
+        meter too, so it is released rather than left charging blind.
+        ``_set_battery_power`` already skips batteries a user owns.
+
+        Entering resets the controller the way a restart would: no PD state,
+        filter or sample timestamp survives the outage, so the first reading
+        after recovery goes through the first-execution initialisation instead
+        of integrating a gap of minutes as one sample.
+
+        Returns True while the fallback owns the cycle.
+        """
+        if not self._main_sensor_dead:
+            if self._dead_meter_fallback_engaged:
+                self._dead_meter_fallback_engaged = False
+                _LOGGER.info(
+                    "Grid sensor %s is publishing again - resuming automatic control",
+                    self.consumption_sensor,
+                )
+            return False
+
+        if not self._dead_meter_fallback_engaged:
+            self._dead_meter_fallback_engaged = True
+            if self._main_sensor_never_reported:
+                _LOGGER.warning(
+                    "Grid sensor %s has not published a valid reading in the %.0f "
+                    "minutes since Home Assistant started - stopping automatic "
+                    "battery control, in case a battery still runs a command from "
+                    "before the restart, until it reports",
+                    self.consumption_sensor, MAIN_SENSOR_DEAD_S / 60,
+                )
+            else:
+                _LOGGER.warning(
+                    "Grid sensor %s has not published for over %.0f minutes - stopping "
+                    "automatic battery control (command was %.0fW) until it reports again",
+                    self.consumption_sensor, MAIN_SENSOR_DEAD_S / 60, self.previous_power,
+                )
+            if self.grid_charging_active:
+                self._clear_predictive_runtime("dead_meter")
+            self.error_integral = 0.0
+            self.previous_error = 0.0
+            self.derivative_filtered = 0.0
+            self.sign_changes = 0
+            self.last_error_sign = 0
+            self.previous_sensor = None
+            self._zero_cross_since = None
+            self._clear_rate_limiter_state()
+            self._grid_filter_ema = None
+            self._last_sensor_report_time = None
+            self._last_control_sample_value = None
+            self._control_sample_is_new = True
+            self._stale_cycles = 0
+            self.first_execution = True
+
+        # Re-asserted every cycle: the bus-load skip makes repeats free, and a
+        # battery that was unreachable when the fallback engaged still gets it.
+        for coordinator in self.coordinators:
+            await self._set_battery_power(coordinator, 0, 0)
+        self.previous_power = 0
+        self.last_output_sign = 0
+        self._active_discharge_batteries = []
+        self._active_charge_batteries = []
+        self._phase_safety_pending = False
+        return True
 
     def _live_sensor_report_time(self):
         """Return when the meter itself last published, not when we last read it.
@@ -9158,6 +9357,11 @@ class ChargeDischargeController:
             self._active_charge_batteries = []
             return
 
+        # A dead meter stops automatic control before predictive dispatch, so a
+        # grid charge cannot keep importing against a ceiling nobody is reading.
+        if await self._apply_dead_meter_fallback():
+            return
+
         # === Predictive Grid Charging Logic (mode dispatch) ===
         if self.predictive_charging_enabled:
             if self.predictive_charging_mode == PREDICTIVE_MODE_DYNAMIC_PRICING:
@@ -9271,6 +9475,7 @@ class ChargeDischargeController:
                         f"{self._max_sensor_stale_s:.1f}s" if sensor_age_s is not None else "unknown age",
                         self.previous_power,
                     )
+                self._cycle_kept_last_command = True
                 return
             stale_safety_recalc = True
             if capacity_protection_must_recheck:
@@ -9391,6 +9596,12 @@ class ChargeDischargeController:
             # streak, so a much later flip must start its own settle window instead
             # of inheriting a stale timestamp that would let it pass instantly.
             self._zero_cross_since = None
+            # Feed the quality metric here too: time on target is part of how
+            # well the loop controls. Without it the metric only averages the
+            # cycles outside the deadband and overstates the error.
+            self._update_pd_quality_metrics(
+                sensor_actual - active_target, False, active_target, False
+            )
             # NOTE: Do NOT clear load sharing state here. Batteries keep executing
             # their last command during deadband, so the active battery lists must
             # remain accurate for the diagnostic sensor.
@@ -10123,7 +10334,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         dev_reg = dr.async_get(hass)
         for h, p in pairs:
-            device = dev_reg.async_get_device(identifiers={(DOMAIN, h)})
+            device = get_entry_device(dev_reg, (DOMAIN, h), entry.entry_id)
             if device:
                 dev_reg.async_update_device(device.id, new_identifiers={(DOMAIN, f"{h}_{p}")})
 
@@ -11465,6 +11676,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         getattr(consumption_tracker, "_legacy_accumulator_rebuild_pending", False)
     )
     if needs_recorder_backfill:
+        # Only warn for entries that use history recovery. Configured predictive
+        # charging still qualifies while its runtime switch is off.
+        from .tracking.recorder_health import async_setup_recorder_health
+
+        async_setup_recorder_health(hass, entry, controller)
+
         if hass.state == CoreState.running:
             await consumption_tracker.startup_backfill_consumption()
             _LOGGER.info("Startup consumption backfill executed immediately (reload)")

@@ -71,7 +71,8 @@ const I18N = {
     dailyOperationSinusoidal: "Sinusoidal fallback", dailyOperationGenericFallback: "Fallback estimate", dailyOperationZeroFallback: "Zero-solar fallback", dailyOperationFallback: "Fallback: {reason}", dailyOperationPlan: "Plan",
     dailyOperationObserved: "Observed", dailyOperationProjected: "Projected", dailyOperationPrevious: "Previous",
     dailyOperationNext: "Next", dailyOperationNow: "Now", dailyOperationCoverage: "Coverage", dailyOperationMode: "Mode",
-    dailyOperationSource: "Source", dailyOperationDSTSkipped: "DST interval skipped", dailyOperationDSTRepeated: "Repeated local hour",
+    dailyOperationSource: "Source", dailyOperationCommanded: "Commanded", dailyOperationRuntimeCommand: "Commanded setpoint, not measured", dailyOperationRuntimeMeasured: "Measured",
+    dailyOperationDSTSkipped: "DST interval skipped", dailyOperationDSTRepeated: "Repeated local hour",
     dailyOperationProvider: "Provider forecast", dailyOperationConsumptionProfile: "Consumption profile", dailyOperationLegacyDaily: "Daily estimate", dailyOperationDynamicSchedule: "Dynamic schedule", dailyOperationTimeSlot: "Time slot", dailyOperationProfileProjection: "Profile projection", dailyOperationUnavailable: "Unavailable",
     dailyOperationRealtimeNoFuture: "Real-time price has no future calendar", dailyOperationUnknown: "Unknown",
     forecastToday: "Solar forecast · 00:05", solarRemaining: "Solar remaining", expectedConsumption: "Expected consumption",
@@ -89,7 +90,7 @@ const I18N = {
     diagActiveBatteries: "Active batteries", diagNonResponsive: "No response",
     diagDischargeWindow: "Discharge window", diagPredictive: "Predictive charging", diagCurtailment: "Smart pre-discharge", diagSurplusHold: "Surplus price hold", highPriceSale: "High-price sale", diagHighPriceDischarge: "High-price sale status", diagDischargeReserve: "Discharge reserve",
     diagPeak: "Peak shaving reserve", diagWeeklyCharge: "Weekly charge", diagChargeDelay: "Charge delay",
-    nResponsive: "{n} no response", none: "None",
+    nResponsive: "{n} no response", none: "None", disabled: "Disabled",
     noBatteriesTitle: "No batteries",
     noBatteriesMsg: "No battery devices were detected in this integration.",
     healthCells: "Health & cells",
@@ -161,7 +162,8 @@ const I18N = {
     dailyOperationSinusoidal: "Curva sinusoidal alternativa", dailyOperationGenericFallback: "Estimación alternativa", dailyOperationZeroFallback: "Previsión solar nula", dailyOperationFallback: "Estimación alternativa: {reason}", dailyOperationPlan: "Plan",
     dailyOperationObserved: "Observado", dailyOperationProjected: "Previsto", dailyOperationPrevious: "Anterior",
     dailyOperationNext: "Siguiente", dailyOperationNow: "Ahora", dailyOperationCoverage: "Cobertura", dailyOperationMode: "Modo",
-    dailyOperationSource: "Fuente", dailyOperationDSTSkipped: "Intervalo DST omitido", dailyOperationDSTRepeated: "Hora local repetida",
+    dailyOperationSource: "Fuente", dailyOperationCommanded: "Comandado", dailyOperationRuntimeCommand: "Consigna enviada, sin medir", dailyOperationRuntimeMeasured: "Medido",
+    dailyOperationDSTSkipped: "Intervalo DST omitido", dailyOperationDSTRepeated: "Hora local repetida",
     dailyOperationProvider: "Previsión del proveedor", dailyOperationConsumptionProfile: "Perfil de consumo", dailyOperationLegacyDaily: "Estimación diaria", dailyOperationDynamicSchedule: "Plan dinámico", dailyOperationTimeSlot: "Franja horaria", dailyOperationProfileProjection: "Proyección del perfil", dailyOperationUnavailable: "No disponible",
     dailyOperationRealtimeNoFuture: "El precio en tiempo real no tiene calendario futuro", dailyOperationUnknown: "Desconocido",
     forecastToday: "Previsión solar · 00:05", solarRemaining: "Solar restante", expectedConsumption: "Consumo esperado",
@@ -179,7 +181,7 @@ const I18N = {
     diagActiveBatteries: "Baterías activas", diagNonResponsive: "Sin respuesta",
     diagDischargeWindow: "Ventana de descarga", diagPredictive: "Carga predictiva", diagCurtailment: "Predescarga inteligente", diagSurplusHold: "Retención de excedente por precio", highPriceSale: "Venta a precio alto", diagHighPriceDischarge: "Estado de venta a precio alto", diagDischargeReserve: "Reserva de descarga",
     diagPeak: "Reserva para reducción de picos", diagWeeklyCharge: "Carga semanal", diagChargeDelay: "Retardo de carga",
-    nResponsive: "{n} sin respuesta", none: "Ninguna",
+    nResponsive: "{n} sin respuesta", none: "Ninguna", disabled: "Desactivado",
     noBatteriesTitle: "Sin baterías",
     noBatteriesMsg: "No se detectaron dispositivos de batería en esta integración.",
     healthCells: "Salud y celdas",
@@ -252,7 +254,8 @@ const I18N = {
     dailyOperationSinusoidal: "Corba sinusoidal alternativa", dailyOperationGenericFallback: "Estimació alternativa", dailyOperationZeroFallback: "Previsió solar nul·la", dailyOperationFallback: "Estimació alternativa: {reason}", dailyOperationPlan: "Pla",
     dailyOperationObserved: "Observat", dailyOperationProjected: "Previst", dailyOperationPrevious: "Anterior",
     dailyOperationNext: "Següent", dailyOperationNow: "Ara", dailyOperationCoverage: "Cobertura", dailyOperationMode: "Mode",
-    dailyOperationSource: "Font", dailyOperationDSTSkipped: "Interval DST omès", dailyOperationDSTRepeated: "Hora local repetida",
+    dailyOperationSource: "Font", dailyOperationCommanded: "Comandat", dailyOperationRuntimeCommand: "Consigna enviada, sense mesurar", dailyOperationRuntimeMeasured: "Mesurat",
+    dailyOperationDSTSkipped: "Interval DST omès", dailyOperationDSTRepeated: "Hora local repetida",
     dailyOperationProvider: "Previsió del proveïdor", dailyOperationConsumptionProfile: "Perfil de consum", dailyOperationLegacyDaily: "Estimació diària", dailyOperationDynamicSchedule: "Pla dinàmic", dailyOperationTimeSlot: "Franja horària", dailyOperationProfileProjection: "Projecció del perfil", dailyOperationUnavailable: "No disponible",
     dailyOperationRealtimeNoFuture: "El preu en temps real no té calendari futur", dailyOperationUnknown: "Desconegut",
     forecastToday: "Previsió solar · 00:05", solarRemaining: "Solar restant", expectedConsumption: "Consum esperat",
@@ -270,7 +273,7 @@ const I18N = {
     diagActiveBatteries: "Bateries actives", diagNonResponsive: "Sense resposta",
     diagDischargeWindow: "Finestra de descàrrega", diagPredictive: "Càrrega predictiva", diagCurtailment: "Predescàrrega intel·ligent", diagSurplusHold: "Retenció d'excedent per preu", highPriceSale: "Venda a preu alt", diagHighPriceDischarge: "Estat de venda a preu alt", diagDischargeReserve: "Reserva de descàrrega",
     diagPeak: "Reserva per a reducció de pics", diagWeeklyCharge: "Càrrega setmanal", diagChargeDelay: "Retard de càrrega",
-    nResponsive: "{n} sense resposta", none: "Cap",
+    nResponsive: "{n} sense resposta", none: "Cap", disabled: "Desactivat",
     noBatteriesTitle: "Sense bateries",
     noBatteriesMsg: "No s'han detectat dispositius de bateria en aquesta integració.",
     healthCells: "Salut i cel·les",
@@ -338,7 +341,8 @@ const I18N = {
     dailyOperationSinusoidal: "Sinusförmige Ersatzkurve", dailyOperationGenericFallback: "Ersatzprognose", dailyOperationZeroFallback: "Solarprognose ohne Ertrag", dailyOperationFallback: "Ersatzprognose: {reason}", dailyOperationPlan: "Plan",
     dailyOperationObserved: "Beobachtet", dailyOperationProjected: "Prognostiziert", dailyOperationPrevious: "Zurück",
     dailyOperationNext: "Weiter", dailyOperationNow: "Jetzt", dailyOperationCoverage: "Abdeckung", dailyOperationMode: "Modus",
-    dailyOperationSource: "Quelle", dailyOperationDSTSkipped: "DST-Intervall übersprungen", dailyOperationDSTRepeated: "Wiederholte Ortszeit",
+    dailyOperationSource: "Quelle", dailyOperationCommanded: "Angesteuert", dailyOperationRuntimeCommand: "Vorgegebener Sollwert, nicht gemessen", dailyOperationRuntimeMeasured: "Gemessen",
+    dailyOperationDSTSkipped: "DST-Intervall übersprungen", dailyOperationDSTRepeated: "Wiederholte Ortszeit",
     dailyOperationProvider: "Anbieterprognose", dailyOperationConsumptionProfile: "Verbrauchsprofil", dailyOperationLegacyDaily: "Tagesschätzung", dailyOperationDynamicSchedule: "Dynamischer Zeitplan", dailyOperationTimeSlot: "Zeitfenster", dailyOperationProfileProjection: "Profilprojektion", dailyOperationUnavailable: "Nicht verfügbar",
     dailyOperationRealtimeNoFuture: "Echtzeitpreis hat keinen Zukunftskalender", dailyOperationUnknown: "Unbekannt",
     forecastToday: "Solarprognose · 00:05", solarRemaining: "Verbleibende Solarenergie", expectedConsumption: "Erwarteter Verbrauch",
@@ -356,7 +360,7 @@ const I18N = {
     diagActiveBatteries: "Aktive Batterien", diagNonResponsive: "Keine Antwort",
     diagDischargeWindow: "Entladefenster", diagPredictive: "Prädiktives Laden", diagCurtailment: "Intelligente Vorentladung", diagSurplusHold: "Preisbremse Solarüberschuss", highPriceSale: "Verkauf bei Hochpreis", diagHighPriceDischarge: "Status Verkauf bei Hochpreis", diagDischargeReserve: "Entladereserve",
     diagPeak: "Reserve für Spitzenlastkappung", diagWeeklyCharge: "Wöchentliche Ladung", diagChargeDelay: "Ladeverzögerung",
-    nResponsive: "{n} ohne Antwort", none: "Keine",
+    nResponsive: "{n} ohne Antwort", none: "Keine", disabled: "Deaktiviert",
     noBatteriesTitle: "Keine Batterien",
     noBatteriesMsg: "In dieser Integration wurden keine Batteriegeräte erkannt.",
     healthCells: "Zustand & Zellen",
@@ -424,7 +428,8 @@ const I18N = {
     dailyOperationSinusoidal: "Courbe sinusoïdale de secours", dailyOperationGenericFallback: "Estimation de secours", dailyOperationZeroFallback: "Prévision solaire nulle", dailyOperationFallback: "Estimation de secours : {reason}", dailyOperationPlan: "Plan",
     dailyOperationObserved: "Observé", dailyOperationProjected: "Prévu", dailyOperationPrevious: "Précédent",
     dailyOperationNext: "Suivant", dailyOperationNow: "Maintenant", dailyOperationCoverage: "Couverture", dailyOperationMode: "Mode",
-    dailyOperationSource: "Source", dailyOperationDSTSkipped: "Intervalle DST ignoré", dailyOperationDSTRepeated: "Heure locale répétée",
+    dailyOperationSource: "Source", dailyOperationCommanded: "Commandé", dailyOperationRuntimeCommand: "Consigne envoyée, non mesurée", dailyOperationRuntimeMeasured: "Mesuré",
+    dailyOperationDSTSkipped: "Intervalle DST ignoré", dailyOperationDSTRepeated: "Heure locale répétée",
     dailyOperationProvider: "Prévision du fournisseur", dailyOperationConsumptionProfile: "Profil de consommation", dailyOperationLegacyDaily: "Estimation quotidienne", dailyOperationDynamicSchedule: "Plan dynamique", dailyOperationTimeSlot: "Créneau horaire", dailyOperationProfileProjection: "Projection du profil", dailyOperationUnavailable: "Indisponible",
     dailyOperationRealtimeNoFuture: "Le prix en temps réel n'a pas de calendrier futur", dailyOperationUnknown: "Inconnu",
     forecastToday: "Prévision solaire · 00:05", solarRemaining: "Solaire restant", expectedConsumption: "Consommation prévue",
@@ -442,7 +447,7 @@ const I18N = {
     diagActiveBatteries: "Batteries actives", diagNonResponsive: "Sans réponse",
     diagDischargeWindow: "Fenêtre de décharge", diagPredictive: "Charge prédictive", diagCurtailment: "Pré-décharge intelligente", diagSurplusHold: "Retenue de surplus selon le prix", highPriceSale: "Vente à prix élevé", diagHighPriceDischarge: "État de la vente à prix élevé", diagDischargeReserve: "Réserve de décharge",
     diagPeak: "Réserve pour écrêtement de pointe", diagWeeklyCharge: "Charge hebdomadaire", diagChargeDelay: "Délai de charge",
-    nResponsive: "{n} sans réponse", none: "Aucune",
+    nResponsive: "{n} sans réponse", none: "Aucune", disabled: "Désactivé",
     noBatteriesTitle: "Aucune batterie",
     noBatteriesMsg: "Aucun appareil de batterie n'a été détecté dans cette intégration.",
     healthCells: "Santé et cellules",
@@ -510,7 +515,8 @@ const I18N = {
     dailyOperationSinusoidal: "Alternatieve sinuscurve", dailyOperationGenericFallback: "Alternatieve prognose", dailyOperationZeroFallback: "Zonneprognose zonder opbrengst", dailyOperationFallback: "Alternatieve prognose: {reason}", dailyOperationPlan: "Plan",
     dailyOperationObserved: "Geobserveerd", dailyOperationProjected: "Verwacht", dailyOperationPrevious: "Vorige",
     dailyOperationNext: "Volgende", dailyOperationNow: "Nu", dailyOperationCoverage: "Dekking", dailyOperationMode: "Modus",
-    dailyOperationSource: "Bron", dailyOperationDSTSkipped: "DST-interval overgeslagen", dailyOperationDSTRepeated: "Herhaalde lokale tijd",
+    dailyOperationSource: "Bron", dailyOperationCommanded: "Aangestuurd", dailyOperationRuntimeCommand: "Aangestuurd setpoint, niet gemeten", dailyOperationRuntimeMeasured: "Gemeten",
+    dailyOperationDSTSkipped: "DST-interval overgeslagen", dailyOperationDSTRepeated: "Herhaalde lokale tijd",
     dailyOperationProvider: "Prognose van aanbieder", dailyOperationConsumptionProfile: "Verbruiksprofiel", dailyOperationLegacyDaily: "Dagelijkse schatting", dailyOperationDynamicSchedule: "Dynamische planning", dailyOperationTimeSlot: "Tijdvak", dailyOperationProfileProjection: "Profielprojectie", dailyOperationUnavailable: "Niet beschikbaar",
     dailyOperationRealtimeNoFuture: "Realtimeprijs heeft geen toekomstige kalender", dailyOperationUnknown: "Onbekend",
     forecastToday: "Zonneverwachting · 00:05", solarRemaining: "Resterende zonne-energie", expectedConsumption: "Verwacht verbruik",
@@ -528,7 +534,7 @@ const I18N = {
     diagActiveBatteries: "Actieve batterijen", diagNonResponsive: "Geen reactie",
     diagDischargeWindow: "Ontlaadvenster", diagPredictive: "Voorspellend laden", diagCurtailment: "Slim voorontladen", diagSurplusHold: "Prijsrem zonne-overschot", highPriceSale: "Verkoop bij hoge prijs", diagHighPriceDischarge: "Status verkoop bij hoge prijs", diagDischargeReserve: "Ontlaadreserve",
     diagPeak: "Reserve voor piekbegrenzing", diagWeeklyCharge: "Wekelijkse lading", diagChargeDelay: "Laadvertraging",
-    nResponsive: "{n} geen reactie", none: "Geen",
+    nResponsive: "{n} geen reactie", none: "Geen", disabled: "Uitgeschakeld",
     noBatteriesTitle: "Geen batterijen",
     noBatteriesMsg: "Er zijn geen batterijapparaten gedetecteerd in deze integratie.",
     healthCells: "Gezondheid & cellen",
@@ -914,6 +920,7 @@ const K = {
   dischargeWindow: "discharge_window",
   predictiveSwitch: "predictive_charging",
   peakSwitch: "capacity_protection",
+  hourlyBalanceSwitch: "hourly_balance",
   // diagnostic-category entities of the "Marstek Venus System" device
   predictiveActive: "predictive_charging_active",
   curtailmentActive: "curtailment_status",
@@ -2171,6 +2178,9 @@ class MarstekVenusPanel extends HTMLElement {
         const s = this._watts(get(mk));
         if (s != null) mpptW = (mpptW || 0) + s;
       }
+      // Only per-MPPT PV is added to cell power. Anker Solarbank 4's ac_power is
+      // the negated pack power, which already includes PV (#738).
+      const cellMpptW = mpptW;
       // Some batteries (Anker Solarbank 4) publish only the aggregate DC PV
       // value. It uses the same canonical translation key as the Venus total,
       // so it can fill the per-battery model without inventing MPPT channels.
@@ -2191,7 +2201,7 @@ class MarstekVenusPanel extends HTMLElement {
       const invBackup = /backup/i.test(this._sval(get(K.inverterState)) || "");
       const cellAcoW = invBackup ? acoW || 0 : 0;
       const powerW =
-        acW != null ? -acW - cellAcoW + (mpptW || 0) : battPwrW;
+        acW != null ? -acW - cellAcoW + (cellMpptW || 0) : battPwrW;
       batteries.push({
         dev,
         soc: this._num(socObj),
@@ -2333,6 +2343,10 @@ class MarstekVenusPanel extends HTMLElement {
     const diagStates = {};
     for (const row of DIAG_ROWS) diagStates[row.key] = this._stateFor(byKey, row.key);
     const alarmObj = diagStates[K.sysAlarm];
+    // The net-balance sensor exists whenever the feature was configured, also
+    // while its switch is off; the switch tells the row which case it shows.
+    const hbSwitch = this._stateFor(byKey, K.hourlyBalanceSwitch);
+    const hourlyBalanceOff = hbSwitch != null && hbSwitch.state === "off";
 
     // exact daily solar/home/grid energy (kWh) from the backend accumulator sensors
     const dailySolar = this._num(this._stateFor(byKey, K.sysDailySolar));
@@ -2388,6 +2402,7 @@ class MarstekVenusPanel extends HTMLElement {
       maxDischarge: maxDis,
       alarm: alarmObj ? alarmObj.state : null,
       diagStates,
+      hourlyBalanceOff,
     };
   }
 
@@ -3199,6 +3214,8 @@ class MarstekVenusPanel extends HTMLElement {
       unavailable: "dailyOperationUnavailable",
       zero_fallback: "dailyOperationZeroFallback",
       fallback: "dailyOperationGenericFallback",
+      runtime_command: "dailyOperationRuntimeCommand",
+      runtime_measured: "dailyOperationRuntimeMeasured",
     };
     if (sourceKeys[normalized]) return this._t(sourceKeys[normalized]);
     if (normalized.includes("learned")) return this._t("dailyOperationLearned");
@@ -3209,6 +3226,18 @@ class MarstekVenusPanel extends HTMLElement {
   _dailyOperationSourceIsObserved(value) {
     if (!value) return true; // Preserve the legacy contract when no per-cell source exists.
     return !/(?:^|[_ -])(command|unavailable|unknown|error)(?:$|[_ -])/i.test(String(value));
+  }
+
+  _dailyOperationActionKind(item) {
+    if (item.status === "forecast") return this._t("dailyOperationPlan");
+    return item.observationTrusted ? this._t("dailyOperationObserved") : this._t("dailyOperationCommanded");
+  }
+
+  _dailyOperationUntrustedSourceLabel(item) {
+    if (item.observationTrusted || !item.operationSource) return null;
+    // "Commanded" on the action row already says the quarter was not measured.
+    if (/(?:^|[_ -])command(?:$|[_ -])/i.test(String(item.operationSource))) return null;
+    return this._dailyOperationSourceLabel(item.operationSource);
   }
 
   _dailyOperationReasonDict() {
@@ -3423,17 +3452,14 @@ class MarstekVenusPanel extends HTMLElement {
     if (item.socForecast != null) parts.push(`${this._t("dailyOperationSoc")} (${this._t("dailyOperationForecast")}): ${this._nf(item.socForecast, 1)} %`);
     if (item.coverage != null) parts.push(`${this._t("dailyOperationCoverage")}: ${Math.round(item.coverage)} s`);
     if (item.actions.length) {
-      const actionKind = item.status === "forecast"
-        ? this._t("dailyOperationPlan")
-        : item.observationTrusted ? this._t("dailyOperationObserved") : this._t("dailyOperationSource");
+      const actionKind = this._dailyOperationActionKind(item);
       parts.push(`${actionKind}: ${item.actions.map((key) => this._dailyOperationActionLabel(key === "solar" ? 1 : key === "grid" ? 2 : 4)).join(", ")}`);
     }
     else if (item.solarWindow) parts.push(this._t("dailyOperationSolarWindow"));
     else if (item.decision === "not_needed") parts.push(this._t("dailyOperationNotNeeded"));
     else parts.push(this._t("dailyOperationNoAction"));
-    if (!item.observationTrusted && item.operationSource) {
-      parts.push(`${this._t("dailyOperationSource")}: ${this._dailyOperationSourceLabel(item.operationSource)}`);
-    }
+    const untrustedSource = this._dailyOperationUntrustedSourceLabel(item);
+    if (untrustedSource) parts.push(`${this._t("dailyOperationSource")}: ${untrustedSource}`);
     if (item.hourlyBalance) {
       parts.push(`${this._t("dailyOperationCause")}: ${this._t("dailyOperationHourlyBalance")}`);
     }
@@ -3489,13 +3515,9 @@ class MarstekVenusPanel extends HTMLElement {
       ? item.actions.map((key) => this._dailyOperationActionLabel(key === "solar" ? 1 : key === "grid" ? 2 : 4)).join(", ")
       : item.solarWindow ? this._t("dailyOperationSolarWindow")
         : item.decision === "not_needed" ? this._t("dailyOperationNotNeeded") : this._t("dailyOperationNoAction");
-    const actionKind = useForecast
-      ? this._t("dailyOperationPlan")
-      : item.observationTrusted ? this._t("dailyOperationObserved") : this._t("dailyOperationSource");
-    rows.push(row(actionKind, actionLabels));
-    if (!item.observationTrusted && item.operationSource) {
-      rows.push(row(this._t("dailyOperationSource"), this._dailyOperationSourceLabel(item.operationSource)));
-    }
+    rows.push(row(this._dailyOperationActionKind(item), actionLabels));
+    const untrustedSource = this._dailyOperationUntrustedSourceLabel(item);
+    if (untrustedSource) rows.push(row(this._t("dailyOperationSource"), untrustedSource));
     if (item.hourlyBalance) {
       rows.push(row(this._t("dailyOperationCause"), this._t("dailyOperationHourlyBalance")));
     }
@@ -4874,6 +4896,9 @@ class MarstekVenusPanel extends HTMLElement {
         : so.state;
     switch (key) {
       case K.netBalance: {
+        // Switched off, the sensor holds 0.0; show the feature as disabled
+        // like the other status rows instead of a green "+0.00 kWh".
+        if (m.hourlyBalanceOff) return { text: this._t("disabled"), tone: "neutral" };
         const n = this._num(so);
         if (n == null) return { text: "—", tone: "neutral" };
         return { text: `${n >= 0 ? "+" : ""}${this._nf(n, 2)} kWh`, tone: n >= 0 ? "good" : "warn" };

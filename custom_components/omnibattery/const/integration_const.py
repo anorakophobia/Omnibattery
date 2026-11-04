@@ -418,14 +418,15 @@ SLOW_SENSOR_WARNING_INTERVAL_S = 10.0
 # shorten the promised tolerance.
 MAX_SENSOR_STALE_S = 65.0
 
-# How long the main grid sensor may go without publishing anything before a
-# Repairs issue is raised. Past MAX_SENSOR_STALE_S the loop already stops
-# integrating P/D, so it simply holds the last command for as long as the
-# silence lasts - bounded by the SOC blockers, not by time. That is silent
-# today: a sensor frozen on a valid value logs nothing at all, and an
-# unavailable one only logs at debug. Long enough to ride out a restart or a
-# brief integration reload, short enough to catch a wedged P1 bridge or a
-# template sensor whose inputs stopped moving.
+# How long the main grid sensor may go without publishing a valid reading
+# before it counts as dead: a Repairs issue is raised and automatic control is
+# stopped (every automatic battery to 0W) until it publishes again. Past
+# MAX_SENSOR_STALE_S the loop already stops integrating P/D and holds the last
+# command; without this limit that hold lasts as long as the silence, bounded
+# only by the SOC blockers. Long enough to ride out a restart or a brief
+# integration reload, and far above any supported sensor cadence (slow sensors
+# are authoritative up to MAX_SENSOR_STALE_S), short enough to catch a wedged
+# P1 bridge or a template sensor whose inputs stopped moving.
 MAIN_SENSOR_DEAD_S = 300.0
 
 # How long a phase sensor must stay unreadable before the degradation becomes a
@@ -482,6 +483,16 @@ HOT_PATH_READBACK_MAX_LATENCY_S = 1.5
 # inverter is not excluded before it has had time to engage. A battery that never
 # engages is still caught, just this many seconds later.
 DISCHARGE_ENGAGE_GRACE_S = 30
+
+# A step up in commanded power by at least this factor restarts that direction's
+# engage grace too, when the battery met the delivery bar (10% of the command)
+# for the previous command: it needs time to ramp to the new power, and a driver
+# that serves cached telemetry keeps showing the pre-step power for seconds. The
+# PD's re-ramp after an anti-windup re-anchor adds near-equal increments onto the
+# measured power, so each of its steps stays below 2x while the battery delivers
+# anything, and a battery stuck at 0 W never meets the previous bar. Neither
+# restarts the grace, so a battery that stalls under that cycle is still caught.
+ENGAGE_GRACE_STEP_FACTOR = 2
 
 # Top-of-charge tail: the last stretch before 100% often tapers hard (CC/CV
 # tail current) well before is_battery_full() reports the battery full or

@@ -164,6 +164,22 @@ def test_runtime_diary_composes_grid_and_dc_solar_charge():
     assert decision["simultaneous"] is True
 
 
+def test_runtime_diary_anker_aggregate_pv_is_not_added_to_pack_power():
+    # Anker SB4: ac_power = -pack power, which already includes PV (#738).
+    coordinator = SimpleNamespace(
+        capabilities=SimpleNamespace(has_mppt_pv=False, has_solar_telemetry=True),
+        data={"ac_power": -300, "solar_power": 500},
+    )
+    controller = _runtime_controller([coordinator])
+
+    decision = ChargeDischargeController._daily_operation_runtime_decision(
+        controller, datetime(2026, 8, 23, 11, 30, tzinfo=MADRID)
+    )
+
+    assert decision["charge_power_w"] == pytest.approx(300)
+    assert decision["action_mask"] & ACTION_SOLAR_CHARGE
+
+
 def test_runtime_diary_ignores_max_ac_derived_solar_for_charge_source():
     coordinator = SimpleNamespace(
         capabilities=SimpleNamespace(
@@ -443,6 +459,28 @@ def test_projection_keeps_manual_battery_as_fixed_soc_capacity():
     assert inputs[1].can_charge is False
     assert inputs[1].can_discharge is False
     assert inputs[1].stored_kwh == pytest.approx(4)
+
+
+@pytest.mark.parametrize(("weekly_active", "expected"), [(False, 90), (True, 100)])
+def test_projection_ceiling_follows_pending_weekly_full_charge(weekly_active, expected):
+    coordinator = SimpleNamespace(
+        name="battery",
+        min_soc=10,
+        max_soc=90,
+        max_charge_power=2000,
+        max_discharge_power=2000,
+        data={"battery_total_energy": 10, "battery_soc": 40},
+    )
+    controller = SimpleNamespace(
+        coordinators=[coordinator],
+        _daily_operation_float=ChargeDischargeController._daily_operation_float,
+        _is_battery_manual_owned=lambda coordinator: False,
+        _weekly_charge_mgr=SimpleNamespace(is_active=lambda: weekly_active),
+    )
+
+    inputs = ChargeDischargeController._daily_operation_battery_inputs(controller)
+
+    assert inputs[0].max_soc_pct == pytest.approx(expected)
 
 
 def test_projection_starts_from_measured_soc_now_instead_of_replaying_the_day():
