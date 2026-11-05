@@ -925,3 +925,41 @@ def test_daytime_no_discharge_window_credits_only_the_solar_surplus(monkeypatch)
         assert item.solar_kwh == pytest.approx(
             max(0.0, raw.solar_kwh - raw.consumption_kwh)
         )
+
+
+def test_the_plan_values_deadline_steps_with_the_arbitrage_gate():
+    # #662: margin and efficiency reach the planner with the per-slot ceilings,
+    # so each deadline step can be valued at the hours it is for; without
+    # them (gate off) the step valuation is off too.
+    now = datetime(2026, 9, 11, 1, 0, tzinfo=_FLOOR_TZ)
+    slots = [
+        PriceSlot(now + timedelta(hours=h), now + timedelta(hours=h + 1), 0.40)
+        for h in range(5)
+    ]
+    decision = {
+        "should_charge": True,
+        "avg_consumption_kwh": _FLOOR_BASE_KW * 24,
+        "energy_deficit_kwh": 1.25,
+        "planned_grid_charge_kwh": 1.25,
+        "excluded_demand_claim_kwh": 0.0,
+    }
+    manager = _floor_manager(25.0)
+    manager._controller.min_arbitrage_margin = 0.05
+    manager._controller.round_trip_efficiency = 0.8
+    requests = []
+    evaluate = manager.evaluate_chronological_projection
+    manager.evaluate_chronological_projection = lambda request: (
+        requests.append(request) or evaluate(request)
+    )
+
+    manager._build_chronological_plan(
+        now=now, slots=slots, decision_data=dict(decision), price_ceiling=0.35,
+        slot_ceilings={slot.start: 0.35 for slot in slots},
+    )
+    manager._build_chronological_plan(
+        now=now, slots=slots, decision_data=dict(decision), price_ceiling=None,
+    )
+
+    assert requests[0].min_arbitrage_margin == 0.05
+    assert requests[0].round_trip_efficiency == 0.8
+    assert requests[1].min_arbitrage_margin is None

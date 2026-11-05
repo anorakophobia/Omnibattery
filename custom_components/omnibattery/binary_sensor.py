@@ -745,6 +745,9 @@ class PredictiveChargingStatusSensor(BinarySensorEntity):
                 "total_shortfall_kwh": _chronological_value(
                     "total_shortfall_kwh", 0.0
                 ),
+                "deadline_left_to_grid_kwh": _chronological_value(
+                    "deadline_left_to_grid_kwh", 0.0
+                ),
                 "energy_deadlines": _chronological_value("energy_deadlines", []),
                 "chronological_plan_reason": _chronological_value(
                     "chronological_plan_reason"

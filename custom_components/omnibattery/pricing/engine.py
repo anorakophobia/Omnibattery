@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from homeassistant.helpers import issue_registry as ir
 
 from ..const import (
+    DEFAULT_ROUND_TRIP_EFFICIENCY,
     DOMAIN,
     PRICE_DATA_ISSUE_DELAY_S,
     PRICE_HEALTH_CHECK_INTERVAL_S,
@@ -169,6 +170,7 @@ _CHRONOLOGICAL_DIAGNOSTIC_KEYS = (
     "flexible_required_kwh",
     "deadline_shortfall_kwh",
     "total_shortfall_kwh",
+    "deadline_left_to_grid_kwh",
     "energy_deadlines",
     "chronological_plan_reason",
     "guaranteed_floor_deadline",
@@ -2804,6 +2806,14 @@ class PricingManager:
         if snapshot:
             self._controller._last_chronological_diagnostics = snapshot
 
+    def _discharge_reserve_holds(self) -> bool:
+        """Whether the discharge reserve keeps stored energy for dearer hours."""
+        manager = getattr(self._controller, "_discharge_reserve_mgr", None)
+        try:
+            return bool(manager is not None and manager.feature_enabled())
+        except Exception:  # noqa: BLE001
+            return False
+
     def _build_chronological_plan(
         self,
         *,
@@ -3314,9 +3324,33 @@ class PricingManager:
                     premium_price_threshold=self._controller.max_price_threshold,
                     slot_ceilings=slot_ceilings,
                     required_from_deadlines=control_extension,
+                    # Each deadline step valued at the hours it is for, with
+                    # the same gate as the per-slot ceilings (off without them).
+                    min_arbitrage_margin=(
+                        getattr(self._controller, "min_arbitrage_margin", None)
+                        if slot_ceilings is not None
+                        else None
+                    ),
+                    round_trip_efficiency=getattr(
+                        self._controller,
+                        "round_trip_efficiency",
+                        DEFAULT_ROUND_TRIP_EFFICIENCY,
+                    ),
+                    reserve_holds=self._discharge_reserve_holds(),
                 )
             )
             plan = evaluation.plan
+            if (
+                persist_diagnostics
+                and not diagnostic_only
+                and evaluation.diagnostics.left_to_grid_kwh > 0.0005
+            ):
+                _LOGGER.info(
+                    "Dynamic pricing: %.3f kWh of deadline energy left to the "
+                    "grid, importing when it is needed is cheaper than "
+                    "charging it earlier",
+                    evaluation.diagnostics.left_to_grid_kwh,
+                )
             if control_extension and not diagnostic_only:
                 # The scalar balance nets tomorrow's solar against tonight's
                 # gap; publish the need the plan actually found so should_charge,
@@ -3379,6 +3413,7 @@ class PricingManager:
                 "flexible_required_kwh": round(diagnostics.flexible_required_kwh, 3),
                 "deadline_shortfall_kwh": round(diagnostics.deadline_shortfall_kwh, 3),
                 "total_shortfall_kwh": round(diagnostics.total_shortfall_kwh, 3),
+                "deadline_left_to_grid_kwh": round(diagnostics.left_to_grid_kwh, 3),
                 "chronological_plan_reason": diagnostics.reason,
                 "energy_deadlines": [
                     {
