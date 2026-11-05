@@ -85,6 +85,9 @@ class ChronologicalPlan:
     earliest_depletion_at: datetime | None = None
     minimum_projected_energy_kwh: float = 0.0
     reason: str = "ok"
+    # Deadline energy importing at the time of use beats charging it earlier
+    # with round-trip losses; it is left to the grid, not a shortfall.
+    left_to_grid_kwh: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -119,6 +122,13 @@ class ChronologicalEvaluationRequest:
     # ``total_required_kwh``. A scalar balance over a multi-day horizon nets
     # tomorrow's solar against tonight's gap, which the deadlines do not (#710).
     required_from_deadlines: bool = False
+    # Arbitrage margin and round-trip efficiency for valuing each deadline
+    # step at the price of the hours it is for. None leaves it off.
+    min_arbitrage_margin: float | None = None
+    round_trip_efficiency: float | None = None
+    # The discharge reserve holds stored energy for dearer hours until the sun
+    # covers the house.
+    reserve_holds: bool = False
 
     def __post_init__(self) -> None:
         if self.horizon_end <= self.now:
@@ -142,6 +152,7 @@ class ChronologicalDiagnostics:
     total_shortfall_kwh: float
     energy_deadlines: tuple[EnergyDeadline, ...]
     reason: str
+    left_to_grid_kwh: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -357,6 +368,9 @@ def allocate_price_slots(
     premium_price_threshold: float | None = None,
     slot_ceilings: Mapping[datetime, float] | None = None,
     required_from_deadlines: bool = False,
+    min_arbitrage_margin: float | None = None,
+    round_trip_efficiency: float | None = None,
+    reserve_holds: bool = False,
 ) -> ChronologicalPlan:
     """Allocate the cheapest feasible slot capacity to energy deadlines.
 
@@ -365,7 +379,20 @@ def allocate_price_slots(
     use slots above their ceiling, up to ``premium_price_threshold`` (None = no
     cap), once the slots under the ceiling are exhausted.  Everything else stays
     under the ceiling (#724).
+
+    With ``min_arbitrage_margin`` and ``round_trip_efficiency``, each step of a
+    depletion deadline is valued at the price of the hours it is for. A slot
+    only serves it when ``price <= use_price x efficiency - margin``; when no
+    slot does, importing at the time of use is cheaper than charging earlier
+    and discharging minutes later, so the step is left to the grid
+    (``left_to_grid_kwh``) instead of booked as a short charge (#662). The
+    battery is then empty through that step, so a slot ending before it no
+    longer serves later steps: their energy would be discharged into it,
+    unless ``reserve_holds`` (the discharge reserve keeps stored energy for
+    dearer hours) and the step comes before the sun covers the house. Off
+    while guaranteed-floor energy is in the plan.
     """
+    price_slots = list(price_slots)
     def ceiling_of(slot: PriceSlot) -> float | None:
         if slot_ceilings is not None:
             return slot_ceilings.get(slot.start, max_price_threshold)
@@ -463,19 +490,89 @@ def allocate_price_slots(
             ),
         )
 
+    value_at_use = (
+        min_arbitrage_margin is not None
+        and min_arbitrage_margin > 0
+        and round_trip_efficiency is not None
+        and premium_budget <= _EPSILON
+    )
+
+    def use_price(begin: datetime, end: datetime) -> float | None:
+        """Net-demand-weighted price of the intervals a deadline step is for.
+
+        None when an interval with demand has no price: hours whose prices are
+        not known yet keep the step chargeable, as before.
+        """
+        weighted = demand = 0.0
+        for interval in intervals:
+            if interval.end <= begin or interval.start >= end:
+                continue
+            net = interval.consumption_kwh - interval.solar_kwh
+            if net <= _EPSILON:
+                continue
+            slot = next(
+                (
+                    slot for slot in price_slots
+                    if slot.start <= interval.start < slot.end
+                    and math.isfinite(float(slot.price))
+                ),
+                None,
+            )
+            if slot is None:
+                return None
+            weighted += slot.price * net
+            demand += net
+        return weighted / demand if demand > _EPSILON else None
+
+    left_to_grid = 0.0
+    left_in_segment: dict[datetime, float] = {}
+    left_until: dict[datetime, datetime] = {}
+    # The discharge reserve keeps stored energy for dearer hours until the sun
+    # covers the house, so up to then it is not discharged into the hours left
+    # to the grid. After that, and without the reserve, nothing holds it.
+    held_until = (
+        next(
+            (
+                interval.start
+                for interval in intervals
+                if interval.end > now
+                and interval.solar_kwh > _EPSILON
+                and interval.solar_kwh >= interval.consumption_kwh
+            ),
+            None,
+        )
+        if reserve_holds
+        else None
+    )
+
+    def after_left(slot: PriceSlot, start: datetime, deadline: datetime) -> bool:
+        # During the slot itself the grid covers the house, so a slot ending at
+        # or after the last step left to the grid still serves later steps.
+        until = left_until.get(start)
+        return (
+            until is None
+            or slot.end >= until
+            or (held_until is not None and deadline <= held_until)
+        )
+
+    previous_in_segment: dict[datetime, EnergyDeadline] = {}
     segment_unusable: dict[datetime, float] = {}
     for deadline in deadlines:
         clip = deadline.kind != "guaranteed_floor"
         blocked = 0.0
         start = allocation_start(deadline.deadline)
+        previous = previous_in_segment.get(start)
+        previous_in_segment[start] = deadline
         allocated_before_segment = sum(
             amount
             for slot, amount in allocations.items()
             if slot.end <= start
         )
         cumulative_target = min(
-            deadline.required_cumulative_kwh - segment_unusable.get(start, 0.0),
-            max(0.0, required - allocated_before_segment),
+            deadline.required_cumulative_kwh
+            - segment_unusable.get(start, 0.0)
+            - left_in_segment.get(start, 0.0),
+            max(0.0, required - left_to_grid - allocated_before_segment),
         )
         already = sum(
             amount
@@ -483,11 +580,41 @@ def allocate_price_slots(
             if in_segment(slot, start, deadline.deadline)
         )
         missing = max(0.0, cumulative_target - already)
+        use_ceiling = None
+        if value_at_use and deadline.kind == "depletion":
+            price = use_price(
+                previous.deadline if previous is not None else start,
+                deadline.deadline,
+            )
+            if price is not None:
+                use_ceiling = price * round_trip_efficiency - min_arbitrage_margin
+        in_reach = [
+            slot for slot in candidates if in_segment(slot, start, deadline.deadline)
+        ]
+        # Only a step some slot could serve is left to the grid; without any
+        # slot under the ceiling it stays a shortfall, as before. A slot before
+        # the night left to the grid cannot serve it either.
+        if use_ceiling is not None and in_reach and not any(
+            slot.price <= use_ceiling and after_left(slot, start, deadline.deadline)
+            for slot in in_reach
+        ):
+            step = max(
+                0.0,
+                deadline.required_cumulative_kwh
+                - (previous.required_cumulative_kwh if previous is not None else 0.0),
+            )
+            step = min(step, missing)
+            left_to_grid += step
+            left_in_segment[start] = left_in_segment.get(start, 0.0) + step
+            left_until[start] = deadline.deadline
+            continue
         eligible = sorted(
             (
                 slot
                 for slot in candidates
                 if in_segment(slot, start, deadline.deadline)
+                and after_left(slot, start, deadline.deadline)
+                and (use_ceiling is None or slot.price <= use_ceiling)
             ),
             key=lambda slot: (
                 slot.price,
@@ -595,11 +722,14 @@ def allocate_price_slots(
     ]
     simulation = no_grid
     allocated = sum(allocations.values())
-    total_shortfall = max(0.0, required - allocated)
+    total_shortfall = max(0.0, required - left_to_grid - allocated)
     if power <= 0:
         reason = "insufficient_power"
     elif not candidates and not premium_candidates and required > 0:
         reason = "price_threshold" if has_ceiling else "no_eligible_slots"
+    elif left_to_grid > _EPSILON and allocated <= _EPSILON:
+        # Every step was cheaper to import when it is needed.
+        reason = "price_threshold"
     elif deadline_shortfall > _EPSILON:
         reason = "deadline_capacity_shortfall"
     elif total_shortfall > _EPSILON:
@@ -620,6 +750,7 @@ def allocate_price_slots(
         earliest_depletion_at=earliest,
         minimum_projected_energy_kwh=simulation.minimum_projected_energy_kwh,
         reason=reason,
+        left_to_grid_kwh=left_to_grid,
     )
 
 
@@ -658,6 +789,9 @@ def evaluate_chronological_request(
         premium_price_threshold=request.premium_price_threshold,
         slot_ceilings=request.slot_ceilings,
         required_from_deadlines=request.required_from_deadlines,
+        min_arbitrage_margin=request.min_arbitrage_margin,
+        round_trip_efficiency=request.round_trip_efficiency,
+        reserve_holds=request.reserve_holds,
     )
     return ChronologicalEvaluationResult(
         plan=plan,
@@ -670,5 +804,6 @@ def evaluate_chronological_request(
             total_shortfall_kwh=plan.total_shortfall_kwh,
             energy_deadlines=tuple(plan.deadlines),
             reason=plan.reason,
+            left_to_grid_kwh=plan.left_to_grid_kwh,
         ),
     )

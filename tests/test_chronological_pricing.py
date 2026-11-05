@@ -688,3 +688,241 @@ def test_only_floor_energy_is_charged_ahead_of_a_solar_fill(kind, expected):
 
     assert plan.allocated_kwh == pytest.approx(expected)
     assert plan.deadline_shortfall_kwh == pytest.approx(0.0)
+
+
+# --- deadline steps valued at their time of use (#662, finding 14) -----------
+
+
+def _flat_night_plan(price_0645=0.45, **kwargs):
+    # 28 Oct, scaled down: the battery runs empty at 03:30 on a flat night
+    # (0.445 to 0.452) and the dear hour comes at 07:00 (0.60). The cheapest
+    # slots are 04:45 to 05:30 (0.4396 to 0.4407).
+    now = BASE + timedelta(hours=3)
+    intervals = [_interval(i, 0.1) for i in range(12, 28)]
+    intervals += [_interval(i, 0.5) for i in range(28, 32)]
+    prices = {12: 0.447, 13: 0.4464, 14: 0.447, 15: 0.4474, 16: 0.452, 17: 0.4492,
+              18: 0.4451, 19: 0.4407, 20: 0.4407, 21: 0.4396, 22: 0.45, 23: 0.45,
+              24: 0.45, 25: 0.45, 26: 0.45, 27: price_0645}
+    prices.update({i: 0.60 for i in range(28, 32)})
+    slots = [_slot(15 * i, 15 * (i + 1), price) for i, price in prices.items()]
+    deadlines = build_energy_deadlines(intervals, usable_initial_kwh=0.2)
+    return allocate_price_slots(
+        intervals,
+        deadlines,
+        slots,
+        total_required_kwh=sum(item.consumption_kwh for item in intervals) - 0.2,
+        effective_power_kw=4.0,
+        now=now,
+        horizon_end=BASE + timedelta(hours=8),
+        usable_initial_kwh=0.2,
+        max_price_threshold=0.454,
+        **kwargs,
+    )
+
+
+_VALUE_AT_USE = {"min_arbitrage_margin": 0.049, "round_trip_efficiency": 0.83}
+
+
+def test_a_flat_night_books_short_charges_for_the_hour_after():
+    """Without the margin the night's steps go into 03:15 and 04:30, used within the hour."""
+    plan = _flat_night_plan()
+
+    starts = {a.slot.start.strftime("%H:%M") for a in plan.allocations}
+    assert {"03:15", "04:30"} & starts
+    assert plan.left_to_grid_kwh == 0.0
+
+
+def test_night_steps_that_do_not_repay_the_losses_are_left_to_the_grid():
+    """0.447 x 0.83 - 0.049 = 0.322: no slot is that cheap, so the grid covers
+    the night. The 07:00 hour (0.60 x 0.83 - 0.049 = 0.449) would pay at 04:45,
+    but the battery is empty through the night left to the grid, so energy
+    charged then would be used up before 07:00. Nothing after the night pays,
+    so the 07:00 hour is left to the grid too."""
+    plan = _flat_night_plan(**_VALUE_AT_USE)
+
+    assert plan.allocations == []
+    assert plan.left_to_grid_kwh == pytest.approx(3.4)
+    assert plan.total_shortfall_kwh == pytest.approx(0.0)
+    assert plan.reason == "price_threshold"
+
+
+def test_a_later_step_is_charged_after_the_night_left_to_the_grid():
+    """With a paying slot at 06:45, the 07:00 hour charges there, not at 04:45."""
+    plan = _flat_night_plan(price_0645=0.44, **_VALUE_AT_USE)
+
+    starts = {a.slot.start.strftime("%H:%M") for a in plan.allocations}
+    assert starts == {"06:45"}
+    assert plan.left_to_grid_kwh == pytest.approx(1.4)
+
+
+def test_without_a_margin_every_step_stays_chargeable():
+    assert _flat_night_plan(round_trip_efficiency=0.83).allocations == (
+        _flat_night_plan().allocations
+    )
+
+
+def test_floor_energy_keeps_every_step_chargeable():
+    """#724: with guaranteed-floor energy in the plan nothing is left to the grid."""
+    plan = _flat_night_plan(premium_kwh=0.5, **_VALUE_AT_USE)
+
+    assert plan.left_to_grid_kwh == 0.0
+
+
+def test_a_step_for_unpriced_hours_stays_chargeable():
+    # Demand after the last price: its value is not known, so keep it.
+    now = BASE + timedelta(hours=3)
+    intervals = [_interval(i, 0.3) for i in range(13, 16)]
+    plan = allocate_price_slots(
+        intervals,
+        build_energy_deadlines(intervals, usable_initial_kwh=0.0),
+        [_slot(12 * 15, 13 * 15, 0.30)],
+        total_required_kwh=0.9,
+        effective_power_kw=8.0,
+        now=now,
+        horizon_end=BASE + timedelta(hours=8),
+        max_price_threshold=0.454,
+        **_VALUE_AT_USE,
+    )
+
+    assert plan.left_to_grid_kwh == 0.0
+    assert plan.allocated_kwh > 0.0
+
+
+def test_a_night_with_nothing_worth_charging_reports_the_price_gate():
+    now = BASE + timedelta(hours=3)
+    intervals = [_interval(i, 0.1) for i in range(12, 20)]
+    slots = [_slot(15 * i, 15 * (i + 1), 0.447) for i in range(12, 20)]
+    plan = allocate_price_slots(
+        intervals,
+        build_energy_deadlines(intervals, usable_initial_kwh=0.0),
+        slots,
+        total_required_kwh=0.8,
+        effective_power_kw=4.0,
+        now=now,
+        horizon_end=BASE + timedelta(hours=8),
+        max_price_threshold=0.454,
+        **_VALUE_AT_USE,
+    )
+
+    assert plan.allocations == []
+    assert plan.left_to_grid_kwh == pytest.approx(0.8)
+    assert plan.total_shortfall_kwh == pytest.approx(0.0)
+    assert plan.reason == "price_threshold"
+
+
+def test_without_any_slot_under_the_ceiling_the_shortfall_stays():
+    """The price gate keeps reporting its shortfall; nothing is left to the grid."""
+    now = BASE + timedelta(hours=3)
+    intervals = [_interval(i, 0.1) for i in range(12, 20)]
+    slots = [_slot(15 * i, 15 * (i + 1), 0.50) for i in range(12, 20)]
+    plan = allocate_price_slots(
+        intervals,
+        build_energy_deadlines(intervals, usable_initial_kwh=0.0),
+        slots,
+        total_required_kwh=0.8,
+        effective_power_kw=4.0,
+        now=now,
+        horizon_end=BASE + timedelta(hours=8),
+        max_price_threshold=0.454,
+        **_VALUE_AT_USE,
+    )
+
+    assert plan.left_to_grid_kwh == 0.0
+    assert plan.total_shortfall_kwh == pytest.approx(0.8)
+    assert plan.reason == "price_threshold"
+
+
+def _night_then_evening_plan(**kwargs):
+    # The #710 shape: tonight is flat (0.447, one cheap slot at 03:15),
+    # tomorrow's midday is cheap (0.44) with the sun covering the house, and
+    # tomorrow evening is dear (0.62). The deadlines run through the evening.
+    now = BASE + timedelta(hours=3)
+    intervals = [_interval(i, 0.1) for i in range(12, 28)]
+    intervals += [_interval(i, 0.1, solar=0.1) for i in range(28, 44)]
+    intervals += [_interval(i, 0.5) for i in range(44, 48)]
+    prices = {i: 0.447 for i in range(12, 28)}
+    prices[13] = 0.40
+    prices.update({i: 0.44 for i in range(28, 44)})
+    prices.update({i: 0.62 for i in range(44, 48)})
+    slots = [_slot(15 * i, 15 * (i + 1), price) for i, price in prices.items()]
+    return allocate_price_slots(
+        intervals,
+        build_energy_deadlines(intervals, usable_initial_kwh=0.2),
+        slots,
+        total_required_kwh=sum(
+            item.consumption_kwh - item.solar_kwh for item in intervals
+        ) - 0.2,
+        effective_power_kw=4.0,
+        now=now,
+        horizon_end=BASE + timedelta(hours=12),
+        usable_initial_kwh=0.2,
+        max_price_threshold=0.454,
+        **kwargs,
+    )
+
+
+def test_the_evening_does_not_take_the_cheap_night_slot():
+    """The 03:15 slot pays for the evening (0.62 x 0.83 - 0.049 = 0.466) but
+    would be discharged into the night left to the grid; the evening charges
+    at midday instead."""
+    plan = _night_then_evening_plan(**_VALUE_AT_USE)
+
+    starts = {a.slot.start.strftime("%H:%M") for a in plan.allocations}
+    assert "03:15" not in starts
+    assert starts and all("07:00" <= start < "11:00" for start in starts)
+    assert plan.left_to_grid_kwh == pytest.approx(1.4)
+    assert plan.total_shortfall_kwh == pytest.approx(0.0)
+
+
+def test_without_the_margin_the_night_charges_for_the_evening():
+    plan = _night_then_evening_plan()
+
+    starts = {a.slot.start.strftime("%H:%M") for a in plan.allocations}
+    assert "03:15" in starts
+
+
+def _flat_night_until_sun_plan(**kwargs):
+    # The flat night above, and from 08:00 the sun covers the house.
+    now = BASE + timedelta(hours=3)
+    intervals = [_interval(i, 0.1) for i in range(12, 28)]
+    intervals += [_interval(i, 0.5) for i in range(28, 32)]
+    intervals += [_interval(i, 0.1, solar=0.3) for i in range(32, 36)]
+    prices = {12: 0.447, 13: 0.4464, 14: 0.447, 15: 0.4474, 16: 0.452, 17: 0.4492,
+              18: 0.4451, 19: 0.4407, 20: 0.4407, 21: 0.4396, 22: 0.45, 23: 0.45,
+              24: 0.45, 25: 0.45, 26: 0.45, 27: 0.45}
+    prices.update({i: 0.60 for i in range(28, 32)})
+    prices.update({i: 0.50 for i in range(32, 36)})
+    slots = [_slot(15 * i, 15 * (i + 1), price) for i, price in prices.items()]
+    return allocate_price_slots(
+        intervals,
+        build_energy_deadlines(intervals, usable_initial_kwh=0.2),
+        slots,
+        total_required_kwh=1.6 + 2.0 - 0.2,
+        effective_power_kw=4.0,
+        now=now,
+        horizon_end=BASE + timedelta(hours=9),
+        usable_initial_kwh=0.2,
+        max_price_threshold=0.454,
+        **_VALUE_AT_USE,
+        **kwargs,
+    )
+
+
+def test_the_reserve_holds_a_night_charge_for_the_morning():
+    """With the discharge reserve on, energy charged at 04:45 is held for the
+    07:00 hour instead of being discharged into the night left to the grid, up
+    to the slot where the sun covers the house."""
+    plan = _flat_night_until_sun_plan(reserve_holds=True)
+
+    starts = {a.slot.start.strftime("%H:%M") for a in plan.allocations}
+    assert starts and starts <= {"04:45", "05:00", "05:15"}
+    assert plan.allocated_kwh == pytest.approx(2.0)
+    assert plan.left_to_grid_kwh == pytest.approx(1.4)
+    assert plan.total_shortfall_kwh == pytest.approx(0.0)
+
+
+def test_without_the_reserve_the_night_charge_would_be_used_up():
+    plan = _flat_night_until_sun_plan()
+
+    assert plan.allocations == []
+    assert plan.left_to_grid_kwh == pytest.approx(3.4)
