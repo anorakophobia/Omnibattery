@@ -1,6 +1,26 @@
 # Changelog
 
-## [Unreleased]
+## [1.6.0b2] - Unreleased
+
+### Fixed
+
+- **No-PD Command Delay: two commands in a row after a safety-timer tick** (#654): a tick just outside the delay window sent a command, and a deferred run armed earlier sent another right after it. The deferred run now waits out the rest of the window. Thanks to @tkaspersNL.
+- **Meter reading held by a paced tick was then acted on as if unchanged** (#654): the next cycle got 0 s elapsed, so the grid filter kept the old value. It now gets the time since the last reading actually used. Thanks to @tkaspersNL.
+
+## [1.6.0b1] - 2026-11-05
+
+### Added
+
+- **Dynamic Pricing: plans across tomorrow once its prices are published** (#710): the charge planner now looks up to the sunrise after tomorrow when tomorrow's prices and a dated solar forecast (Energy dashboard) are available, so tonight's slots are weighed against tomorrow's solar and evening peak and tomorrow's cheap slots can replace overbuying tonight. Only slots before the next sunrise are scheduled; the rest is planned again at the next daily evaluation. Without either input nothing changes.
+- **Frank Energie (NL) price source** (PR#696): import and export price curves from the [Frank Energie](https://github.com/HiDiHo01/home-assistant-frank_energie) HACS integration, hourly or quarter-hourly. Thanks to @GruttePier013.
+- **EnergyZero (NL) price source** (PR#705): import and export price curves from the official EnergyZero integration (`energyzero.get_energy_prices`), market or all-in, hourly or quarter-hourly, picked from the selected sensor. Thanks to @mhspelt.
+- **Repairs warning when Recorder excludes the sensors used to recover forecast history** (Home Consumption, solar production, excluded-device power). Thanks to @thomasvt1.
+
+### Changed
+
+- **Discharge reserve: the solar credit follows the forecast provider's hourly curve** (#754): the reserve spread the solar forecast over a sine from the astronomical sunrise, as if the horizon were flat, while predictive charging already used the provider's dated periods. Where the provider has them (the sensor's own, or the Energy dashboard forecast from Solcast, Forecast.Solar, Open-Meteo...), each day's solar is now split hour by hour as the provider expects it: a late morning behind a hill, the low winter sun, the provider's damping. The day's total is unchanged, and the sine stays wherever the periods do not cover the day. Thanks to @anorakophobia.
+- **Device registry lookups use the per-entry API on HA 2026.10+**, avoiding the `async_get_device` deprecation. Thanks to @tkaspersNL.
+- **Manifest no longer lists `pyserial`**: Home Assistant ships it, and hassfest now rejects it. Modbus RTU is unaffected.
 
 ### Fixed
 
@@ -24,6 +44,7 @@
 - **Chronological planning on the autumn DST change** (PR#679, #678): every plan whose horizon crossed the repeated 02:00 hour fell back with "energy interval end must be after start", so Daily Operation showed no plan for the whole day before the change. Quarter-hour boundaries now carry a fixed UTC offset, so the repeated hour sorts after its first pass and the quarter across the skipped spring hour lasts 15 minutes instead of 75. Thanks to @syphernl.
 - **Anker Solarbank 4: System Battery Cell Power counted solar twice** (#738): the sensor and the dashboard's Charge/Discharge blocks added the solar input on top of the battery pack power, which already includes it, so they now show the real charge power. The Daily Operation diary no longer counts it twice either. Thanks to @Hellsing.
 - **Battery form capped Min SOC at 30% on v3/vA/vD** (PR#741, #707): saving the form lowered a higher Min SOC set on the SOC limit entity (up to 50%). The form now offers the same range as that entity; v2 keeps 30%, its hardware register limit. Thanks to @amys94fr.
+- **Battery form capped Max SOC at 80% on v3/vA/vD** (PR#756): saving the form raised a lower Max SOC set on the SOC limit entity (down to 50%). The form now offers the same range as that entity; v2 and other brands keep 80%. Thanks to @amys94fr.
 - **Grid sensor dead: automatic control now stops**: after 5 min without a valid grid reading (frozen, unavailable or never reported since restart), automatic batteries go to 0 W until it returns, with a Repair explaining why. Thanks to @tkaspersNL.
 - **Dynamic Pricing: a slot still running at midnight never stopped**: the new-day reset left grid charging on; it now stops the slot (a slot continuing past 00:00 restarts). Thanks to @StalkersGlue.
 - **Dynamic Pricing: an extra re-evaluation just after midnight** (PR#749): at 00:00 the solar sensor's new-day total read as a forecast revision, so a re-evaluation (and its notification) ran 5 min before the daily one. 00:00 to 00:05 is now left to the daily evaluation. Thanks to @anorakophobia.
@@ -39,28 +60,7 @@
 - **Panel: daily-operation tooltip showed "Source" twice** for unmeasured quarters. Thanks to @tkaspersNL.
 - **Chronological plan counted all solar as battery charge in no-discharge slots** (#616): in fleet-wide no-discharge time slots and price-blocked discharge hours, the projection now credits only the solar left after household load, so the projected SOC is no longer overstated and needed grid charging is planned. Thanks to @iwanvandaele.
 - **Solar timeline: next-day forecast periods caused a false provider_gap** (#752): the overnight gap before tomorrow's forecast was counted as a gap in today's daylight, so a complete provider forecast was rejected and the sinusoidal curve used instead; only gaps inside the daylight window are now checked. Thanks to @Hellsing.
-
-### Added
-
-- **Dynamic Pricing: plans across tomorrow once its prices are published** (#710): the charge planner now looks up to the sunrise after tomorrow when tomorrow's prices and a dated solar forecast (Energy dashboard) are available, so tonight's slots are weighed against tomorrow's solar and evening peak and tomorrow's cheap slots can replace overbuying tonight. Only slots before the next sunrise are scheduled; the rest is planned again at the next daily evaluation. Without either input nothing changes.
-- **Frank Energie (NL) price source** (PR#696): import and export price curves from the [Frank Energie](https://github.com/HiDiHo01/home-assistant-frank_energie) HACS integration, hourly or quarter-hourly. Thanks to @GruttePier013.
-- **EnergyZero (NL) price source** (PR#705): import and export price curves from the official EnergyZero integration (`energyzero.get_energy_prices`), market or all-in, hourly or quarter-hourly, picked from the selected sensor. Thanks to @mhspelt.
-- **Repairs warning when Recorder excludes the sensors used to recover forecast history** (Home Consumption, solar production, excluded-device power). Thanks to @thomasvt1.
-
-### Changed
-
-- **Discharge reserve: the solar credit follows the forecast provider's hourly curve** (#754): the reserve spread the solar forecast over a sine from the astronomical sunrise, as if the horizon were flat, while predictive charging already used the provider's dated periods. Where the provider has them (the sensor's own, or the Energy dashboard forecast from Solcast, Forecast.Solar, Open-Meteo...), each day's solar is now split hour by hour as the provider expects it: a late morning behind a hill, the low winter sun, the provider's damping. The day's total is unchanged, and the sine stays wherever the periods do not cover the day. Thanks to @anorakophobia.
-- **Device registry lookups use the per-entry API on HA 2026.10+**, avoiding the `async_get_device` deprecation. Thanks to @tkaspersNL.
-
-## [1.5.1b2] - 2026-10-13
-
-### Fixed
-
 - **Time Slot: Manual mode with both charge and discharge allowed** (#614): the form now rejects it. Such a slot silently fell back to PD and never forced the configured power. Thanks to @UsiuO.
-
-### Changed
-
-- **Manifest no longer lists `pyserial`**: Home Assistant ships it, and hassfest now rejects it. Modbus RTU is unaffected.
 
 ## [1.5.1b1] - 2026-10-12
 
