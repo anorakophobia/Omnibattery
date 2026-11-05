@@ -6,6 +6,7 @@
 
 - **No-PD Command Delay: two commands in a row after a safety-timer tick** (#654): a tick just outside the delay window sent a command, and a deferred run armed earlier sent another right after it. The deferred run now waits out the rest of the window. Thanks to @tkaspersNL.
 - **Meter reading held by a paced tick was then acted on as if unchanged** (#654): the next cycle got 0 s elapsed, so the grid filter kept the old value. It now gets the time since the last reading actually used. Thanks to @tkaspersNL.
+- **Dynamic Pricing: short full-power charges discharged again within the hour** (#662): on a flat night each step of the projected shortfall was booked in the cheapest slot before it, so the battery charged for a few minutes and then covered the next hour with that energy at the same price, minus the round-trip losses. With **Minimum Arbitrage Margin** on, each step is now valued at the price of the hours it is for, and is only charged in a slot that clears the round-trip efficiency and the margin; otherwise the grid covers it when it is needed (`deadline_left_to_grid_kwh`, an INFO line). The battery is then empty through those hours, so a later, dearer step no longer takes a slot before them, unless the discharge reserve holds that energy until the sun covers the house. Hours without a price stay chargeable, Guaranteed Minimum SOC energy is unchanged (#724), and without any slot under the ceiling the shortfall is reported as before.
 
 ## [1.6.0b1] - 2026-11-05
 
