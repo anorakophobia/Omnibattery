@@ -11,35 +11,36 @@ from pathlib import Path
 
 PANEL = Path("custom_components/omnibattery/frontend/marstek-panel.js")
 
-# Expected group of each predictive item, in render order: each discharge
-# feature keeps its switch, its sliders and its status row in one group.
+# Expected group of each predictive item, in render order: one group per
+# feature (its switch, its sliders and its status row), buying first, then
+# using, selling and the solar-surplus features.
 EXPECTED = [
     ("predictive_charging", "base"),
     ("predictive_charging_notifications", "base"),
-    ("predictive_safety_margin_kwh_use_default", "base"),
-    ("predictive_safety_margin_kwh", "base"),
-    ("min_soc_floor_enabled", "base"),
-    ("predictive_min_soc_floor", "base"),
-    ("price_discharge_control", "price"),
-    ("max_price_threshold_enabled", "price"),
-    ("max_price_threshold", "price"),
-    ("discharge_price_threshold_enabled", "price"),
-    ("discharge_price_threshold", "price"),
-    ("min_arbitrage_margin", "price"),
-    ("round_trip_efficiency", "price"),
-    ("negative_price_charging", "price"),
+    ("predictive_safety_margin_kwh_use_default", "solar"),
+    ("predictive_safety_margin_kwh", "solar"),
+    ("min_soc_floor_enabled", "floor"),
+    ("predictive_min_soc_floor", "floor"),
+    ("max_price_threshold_enabled", "chargePrice"),
+    ("max_price_threshold", "chargePrice"),
+    ("min_arbitrage_margin", "chargePrice"),
+    ("round_trip_efficiency", "chargePrice"),
+    ("negative_price_charging", "chargePrice"),
+    ("price_discharge_control", "dischargePrice"),
+    ("discharge_price_threshold_enabled", "dischargePrice"),
+    ("discharge_price_threshold", "dischargePrice"),
+    ("discharge_reserve", "reserve"),
+    ("discharge_reserve_min_saving", "reserve"),
+    ("discharge_reserve_status", "reserve"),
+    ("high_price_sale", "highPrice"),
+    ("high_price_discharge_status", "highPrice"),
+    ("surplus_price_hold", "surplus"),
+    ("surplus_hold_min_saving", "surplus"),
+    ("surplus_price_hold_status", "surplus"),
     ("smart_predischarge", "predischarge"),
     ("negative_injection_threshold", "predischarge"),
     ("predischarge_reserve_soc", "predischarge"),
     ("curtailment_status", "predischarge"),
-    ("surplus_price_hold", "surplus"),
-    ("surplus_hold_min_saving", "surplus"),
-    ("surplus_price_hold_status", "surplus"),
-    ("high_price_sale", "highPrice"),
-    ("high_price_discharge_status", "highPrice"),
-    ("discharge_reserve", "reserve"),
-    ("discharge_reserve_min_saving", "reserve"),
-    ("discharge_reserve_status", "reserve"),
     ("reevaluate_dynamic_pricing", "action"),
 ]
 
@@ -84,3 +85,21 @@ def test_price_thresholds_hide_behind_their_manual_switch():
         assert f'key: "{key}_enabled", domain: "switch"' in card
     assert 'n.classList?.toggle("sub-off", !shown)' in panel
     assert ".card .sub-off { display: none; }" in panel
+
+
+def test_the_discharge_floor_hides_with_its_feature():
+    # The floor is read only by "Discharge only above price": it hides behind
+    # its manual switch, which itself hides behind the feature (a chain).
+    panel = PANEL.read_text(encoding="utf-8")
+    start = panel.index('tk: "diagPredictive"')
+    card = panel[start : panel.index('tk: "diagChargeDelay"', start)]
+    manual = re.search(r'\{ key: "discharge_price_threshold_enabled",[^}]*\}', card).group(0)
+    assert 'dep: "price_discharge_control"' in manual
+
+    body = panel[panel.index("_renderSysSections(defs, store, empty) {") :]
+    body = body[: body.index("_hourlyWarnEl()")]
+    # every switch on the way up must be on, and each of them re-checks the card
+    assert "dep = parent.item.dep;" in body
+    assert 'd.ids.every((id) => (this._hass.states[id] || {}).state === "on")' in body
+    assert "w.depRefresh = refreshDeps;" in body
+    assert "if (w.depRefresh) w.depRefresh();" in panel
