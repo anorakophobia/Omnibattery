@@ -12,7 +12,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .number import config_number_default
 from .const import (
+    CONFIG_NUMBER_DEFINITIONS,
     DOMAIN,
     CONF_CAPACITY_PROTECTION_ENABLED,
     CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES,
@@ -106,6 +108,12 @@ async def async_setup_entry(
         # be turned on from the dashboard even if configured off at setup).
         entities.append(WeeklyFullChargeEnableSwitch(hass, entry, controller))
         entities.append(VacationModeSwitch(hass, entry, controller))
+        # A "use default" switch beside each setting slider that has one, under
+        # the slider's own condition.
+        for definition in CONFIG_NUMBER_DEFINITIONS:
+            condition = definition.get("condition")
+            if definition.get("default_switch") and (not condition or condition in entry.data):
+                entities.append(ConfigNumberDefaultSwitch(hass, entry, controller, definition))
 
     # Keep mode-specific predictive controls registered while the master switch
     # is off. The dashboard hides them behind that switch, and the pricing engine
@@ -2340,6 +2348,68 @@ class PriceThresholdEnabledSwitch(SwitchEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         self._set_enabled(False)
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
+class ConfigNumberDefaultSwitch(SwitchEntity):
+    """ON while a setting has no stored value, so it follows its default.
+
+    A number entity cannot be cleared from the UI. ON removes the stored value:
+    the setting is its default again and follows it, e.g. the solar safety
+    margin (5 % of the fleet) when a battery is added or removed. OFF stores the
+    value in use as a fixed one. Moving the slider stores a value too, which
+    turns this OFF. A manual value is not kept.
+    """
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller, definition: dict) -> None:
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+        self._definition = definition
+        self._key = definition["key"]
+        name = f"{self._key}_use_default"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = name
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}{name}"
+        self.entity_id = system_entity_id("switch", name)
+        self._attr_icon = definition.get("icon")
+        self._attr_should_poll = False
+
+    async def async_added_to_hass(self) -> None:
+        """Follow the slider: setting it stores a value, which turns this off."""
+        self.async_on_remove(self.entry.add_update_listener(self._handle_entry_update))
+
+    async def _handle_entry_update(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def is_on(self) -> bool:
+        return self._key not in self.entry.data
+
+    def _store(self, new_data: dict) -> None:
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        self.controller.update_pd_parameters()
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs) -> None:
+        new_data = dict(self.entry.data)
+        new_data.pop(self._key, None)
+        self._store(new_data)
+        _LOGGER.info("%s follows its default again", self._key)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        new_data = dict(self.entry.data)
+        new_data[self._key] = config_number_default(self.hass, self.entry, self._definition)
+        self._store(new_data)
+        _LOGGER.info("%s fixed at %s", self._key, new_data[self._key])
 
     @property
     def device_info(self):

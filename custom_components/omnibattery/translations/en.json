@@ -1453,6 +1453,9 @@
       "min_soc_floor_enabled": {
         "name": "Guaranteed Minimum SOC"
       },
+      "predictive_safety_margin_kwh_use_default": {
+        "name": "Solar Forecast Safety Margin: use default"
+      },
       "max_price_threshold_enabled": {
         "name": "Manual Charge Price Ceiling"
       },
