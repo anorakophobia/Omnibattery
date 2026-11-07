@@ -16,6 +16,7 @@ PANEL = Path("custom_components/omnibattery/frontend/marstek-panel.js")
 EXPECTED = [
     ("predictive_charging", "base"),
     ("predictive_charging_notifications", "base"),
+    ("predictive_safety_margin_kwh_use_default", "base"),
     ("predictive_safety_margin_kwh", "base"),
     ("min_soc_floor_enabled", "base"),
     ("predictive_min_soc_floor", "base"),

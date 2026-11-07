@@ -1351,6 +1351,9 @@ CONFIG_NUMBER_DEFINITIONS = [
         # the controller falls back to, or a new entry reads 0.0 on the panel
         # while the engine hedges with something else.
         "default": default_predictive_safety_margin_kwh,
+        # A "use default" switch beside the slider (switch.py): no stored
+        # value means the default, which follows the fleet.
+        "default_switch": True,
         "icon": "mdi:solar-power-variant",
         "condition": CONF_ENABLE_PREDICTIVE_CHARGING,
     },
