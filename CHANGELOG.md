@@ -14,6 +14,7 @@
 
 ### Added
 
+- **Status per excluded device**: a new status entity per excluded device (and a row closing its block on the card) says what Omnibattery does with it right now: excluded from the battery, on solar surplus, covered by the battery, priority (dynamic power control), idle, paused or without a power reading, with its power and the adjustment applied. Thanks to @anorakophobia.
 - **Temperature Charge Limit Status**: a new status entity (and a row on the Temperature charge limit card) that is on while a battery is hot enough for its charge power to be throttled, with each battery's allowed power as a percentage of normal, its temperature and the hottest battery. Thanks to @anorakophobia.
 - **Solar Forecast Safety Margin: "use default" switch**: a slider can't be cleared, so once moved the margin stayed a fixed kWh value for good. The new switch beside it returns it to the default, 5 % of the fleet's capacity, which then follows batteries being added or removed. Off fixes the value in use; moving the slider sets a fixed value and turns it off. The panel tags the slider "default" while it follows. Thanks to @anorakophobia.
 
