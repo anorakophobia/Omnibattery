@@ -54,7 +54,7 @@ const DAILY_OPERATION_SUNSET_ZERO_INTERVALS = 4;
 // names in translations/*.json so the panel reads consistently with HA.
 const I18N = {
   en: {
-    subtitle: "Control Panel", statusSurplusHold: "Surplus price hold status", statusDischargeReserve: "Discharge reserve status", statusPredischarge: "Smart pre-discharge status",
+    subtitle: "Control Panel", statusSurplusHold: "Surplus price hold status", statusDischargeReserve: "Discharge reserve status", statusPredischarge: "Smart pre-discharge status", statusPredictive: "Predictive charging status", statusWeekly: "Weekly full charge status",
     live: "Live",
     evCharger: "EV charger",
     flowToggle: "Switch diagram",
@@ -145,7 +145,7 @@ const I18N = {
     slotStateLabel: "State", slotActiveWord: "active", slotInactiveWord: "inactive",
   },
   es: {
-    subtitle: "Panel de Control", statusSurplusHold: "Estado de retención de excedente por precio", statusDischargeReserve: "Estado de reserva de descarga", statusPredischarge: "Estado de predescarga inteligente",
+    subtitle: "Panel de Control", statusSurplusHold: "Estado de retención de excedente por precio", statusDischargeReserve: "Estado de reserva de descarga", statusPredischarge: "Estado de predescarga inteligente", statusPredictive: "Estado de la carga predictiva", statusWeekly: "Estado de la carga semanal completa",
     live: "En vivo",
     evCharger: "Cargador VE",
     flowToggle: "Cambiar diagrama",
@@ -236,7 +236,7 @@ const I18N = {
     slotStateLabel: "Estado", slotActiveWord: "activa", slotInactiveWord: "inactiva",
   },
   ca: {
-    subtitle: "Tauler de control", statusSurplusHold: "Estat de retenció d'excedent per preu", statusDischargeReserve: "Estat de reserva de descàrrega", statusPredischarge: "Estat de predescàrrega intel·ligent",
+    subtitle: "Tauler de control", statusSurplusHold: "Estat de retenció d'excedent per preu", statusDischargeReserve: "Estat de reserva de descàrrega", statusPredischarge: "Estat de predescàrrega intel·ligent", statusPredictive: "Estat de la càrrega predictiva", statusWeekly: "Estat de la càrrega setmanal completa",
     ctlLock: "Bloqueja els controls", ctlUnlock: "Desbloqueja els controls",
     live: "En directe",
     evCharger: "Carregador VE",
@@ -323,7 +323,7 @@ const I18N = {
     slotStateLabel: "Estat", slotActiveWord: "activa", slotInactiveWord: "inactiva",
   },
   de: {
-    subtitle: "Bedienfeld", statusSurplusHold: "Status Preisbremse Solarüberschuss", statusDischargeReserve: "Status Entladereserve", statusPredischarge: "Status intelligente Vorentladung",
+    subtitle: "Bedienfeld", statusSurplusHold: "Status Preisbremse Solarüberschuss", statusDischargeReserve: "Status Entladereserve", statusPredischarge: "Status intelligente Vorentladung", statusPredictive: "Status prädiktives Laden", statusWeekly: "Status wöchentliche Vollladung",
     ctlLock: "Steuerelemente sperren", ctlUnlock: "Steuerelemente entsperren",
     live: "Live",
     evCharger: "E-Auto-Lader",
@@ -410,7 +410,7 @@ const I18N = {
     slotStateLabel: "Status", slotActiveWord: "aktiv", slotInactiveWord: "inaktiv",
   },
   fr: {
-    subtitle: "Panneau de contrôle", statusSurplusHold: "État de la retenue de surplus", statusDischargeReserve: "État de la réserve de décharge", statusPredischarge: "État de la pré-décharge intelligente",
+    subtitle: "Panneau de contrôle", statusSurplusHold: "État de la retenue de surplus", statusDischargeReserve: "État de la réserve de décharge", statusPredischarge: "État de la pré-décharge intelligente", statusPredictive: "État de la charge prédictive", statusWeekly: "État de la charge complète hebdomadaire",
     ctlLock: "Verrouiller les commandes", ctlUnlock: "Déverrouiller les commandes",
     live: "En direct",
     evCharger: "Chargeur VE",
@@ -497,7 +497,7 @@ const I18N = {
     slotStateLabel: "État", slotActiveWord: "actif", slotInactiveWord: "inactif",
   },
   nl: {
-    subtitle: "Bedieningspaneel", statusSurplusHold: "Status prijsrem zonne-overschot", statusDischargeReserve: "Status ontlaadreserve", statusPredischarge: "Status slim voorontladen",
+    subtitle: "Bedieningspaneel", statusSurplusHold: "Status prijsrem zonne-overschot", statusDischargeReserve: "Status ontlaadreserve", statusPredischarge: "Status slim voorontladen", statusPredictive: "Status voorspellend laden", statusWeekly: "Status wekelijkse volledige lading",
     ctlLock: "Bediening vergrendelen", ctlUnlock: "Bediening ontgrendelen",
     live: "Live",
     evCharger: "EV-lader",
@@ -1053,6 +1053,7 @@ const SYS_SECTIONS = [
       { key: "weekly_full_charge_day", domain: "select", lk: "itemWeeklyDay", icon: "mdi:calendar-week" },
       // acts only inside Charge Delay, so it shows only while that is on (another card)
       { key: "weekly_full_charge_delay", domain: "switch", lk: "itemWeeklyDelay", icon: "mdi:timer-sand", dep: "charge_delay" },
+      { key: "weekly_full_charge", domain: "sensor", lk: "statusWeekly", icon: "mdi:battery-clock" },
     ],
   },
   {
@@ -1176,6 +1177,7 @@ const SYS_SECTIONS = [
       // the solar-surplus features, then the action button.
       { key: "predictive_charging", domain: "switch", lk: "itemEnable", icon: "mdi:brain", gate: true, grp: "base" },
       { key: "predictive_charging_notifications", domain: "switch", lk: "itemPredictiveNotifications", icon: "mdi:bell-ring-outline", grp: "base" },
+      { key: "predictive_charging_active", domain: "binary_sensor", lk: "statusPredictive", icon: "mdi:brain", grp: "base" },
       { key: "predictive_safety_margin_kwh_use_default", domain: "switch", lk: "itemSolarSafetyDefault", icon: "mdi:solar-power-variant", adv: true, grp: "solar" },
       { key: "predictive_safety_margin_kwh", lk: "itemSolarSafety", icon: "mdi:solar-power-variant", adv: true, grp: "solar" },
       { key: "min_soc_floor_enabled", domain: "switch", lk: "itemMinSocFloorEnable", icon: "mdi:battery-arrow-up", adv: true, grp: "floor" },
@@ -1303,6 +1305,8 @@ const DEFAULT_SYS_ORDER = (() => {
 // Shown as a hover title + tap popover. English is the fallback (see _help).
 const SYS_HELP = {
   en: {
+    weekly_full_charge: "State of this week's full charge: idle, charging to 100 %, complete or disabled. Attributes show the day, the reason it finished and each battery's state.",
+    predictive_charging_active: "On while a predictive charging slot is charging. Attributes show the plan: the energy balance, the selected slots and their prices, deadlines and the reason for the decision.",
     temp_charge_limit: "On: “Temperature charge limit” applies and its settings below are shown. Default: off.",
     capacity_protection: "On: “Peak shaving reserve” applies and its settings below are shown. Default: off.",
     system_power_limits: "On: “System power limits” applies and its settings below are shown. Default: off.",
@@ -1402,6 +1406,8 @@ const SYS_HELP = {
     round_trip_efficiency: "Battery round-trip efficiency (kWh out / kWh in), used to value stored energy for the arbitrage margin and High-Price Sale. Lower values make the check stricter. With “use measured” on it shows the value measured on your batteries. Default: measured (0.85 until a battery has 50 cycles).",
   },
   es: {
+    weekly_full_charge: "Estado de la carga completa de esta semana: inactiva, cargando al 100 %, completada o desactivada. Los atributos muestran el día, el motivo de finalización y el estado de cada batería.",
+    predictive_charging_active: "Activo mientras una franja de carga predictiva está cargando. Los atributos muestran el plan: el balance energético, las franjas elegidas y sus precios, los plazos y el motivo de la decisión.",
     temp_charge_limit: "Activado: se aplica «Límite de carga por temperatura» y se muestran sus ajustes de abajo. Por defecto: desactivado.",
     capacity_protection: "Activado: se aplica «Reserva para reducción de picos» y se muestran sus ajustes de abajo. Por defecto: desactivado.",
     system_power_limits: "Activado: se aplica «Límites de potencia del sistema» y se muestran sus ajustes de abajo. Por defecto: desactivado.",
@@ -1501,6 +1507,8 @@ const SYS_HELP = {
     round_trip_efficiency: "Eficiencia de ciclo completo de la batería (kWh de salida / kWh de entrada), usada para valorar la energía almacenada en el margen de arbitraje y la venta a precio alto. Valores más bajos endurecen el filtro. Con «usar la medida» activado muestra el valor medido en tus baterías. Por defecto: medida (0,85 hasta que una batería tenga 50 ciclos).",
   },
   ca: {
+    weekly_full_charge: "Estat de la càrrega completa d'aquesta setmana: inactiva, carregant al 100 %, completada o desactivada. Els atributs mostren el dia, el motiu de finalització i l'estat de cada bateria.",
+    predictive_charging_active: "Actiu mentre una franja de càrrega predictiva està carregant. Els atributs mostren el pla: el balanç energètic, les franges triades i els seus preus, els terminis i el motiu de la decisió.",
     temp_charge_limit: "Activat: s'aplica «Límit de càrrega per temperatura» i es mostren els seus ajustos de sota. Per defecte: desactivat.",
     capacity_protection: "Activat: s'aplica «Reserva per a reducció de pics» i es mostren els seus ajustos de sota. Per defecte: desactivat.",
     system_power_limits: "Activat: s'aplica «Límits de potència del sistema» i es mostren els seus ajustos de sota. Per defecte: desactivat.",
@@ -1600,6 +1608,8 @@ const SYS_HELP = {
     round_trip_efficiency: "Eficiència de cicle complet de la bateria (kWh de sortida / kWh d'entrada), usada per valorar l'energia emmagatzemada al marge d'arbitratge i a la venda a preu alt. Valors més baixos endureixen el filtre. Amb «fer servir la mesurada» activat mostra el valor mesurat a les teves bateries. Per defecte: mesurada (0,85 fins que una bateria tingui 50 cicles).",
   },
   de: {
+    weekly_full_charge: "Zustand der Vollladung dieser Woche: inaktiv, lädt auf 100 %, abgeschlossen oder deaktiviert. Die Attribute zeigen den Tag, den Abschlussgrund und den Zustand jeder Batterie.",
+    predictive_charging_active: "Ein, solange ein prädiktiver Ladeslot lädt. Die Attribute zeigen den Plan: die Energiebilanz, die gewählten Zeitfenster mit ihren Preisen, die Fristen und den Grund der Entscheidung.",
     temp_charge_limit: "Ein: „Temperaturbasierte Ladebegrenzung“ gilt und die Einstellungen darunter werden angezeigt. Standard: aus.",
     capacity_protection: "Ein: „Reserve für Spitzenlastkappung“ gilt und die Einstellungen darunter werden angezeigt. Standard: aus.",
     system_power_limits: "Ein: „System-Leistungsgrenzen“ gilt und die Einstellungen darunter werden angezeigt. Standard: aus.",
@@ -1699,6 +1709,8 @@ const SYS_HELP = {
     round_trip_efficiency: "Round-Trip-Wirkungsgrad der Batterie (kWh raus / kWh rein), mit dem gespeicherte Energie für die Arbitragemarge und den Verkauf bei Hochpreis bewertet wird. Niedrigere Werte machen die Prüfung strenger. Mit „gemessenen verwenden“ an zeigt er den an deinen Batterien gemessenen Wert. Standard: gemessen (0,85, bis eine Batterie 50 Zyklen hat).",
   },
   fr: {
+    weekly_full_charge: "État de la charge complète de la semaine : inactive, en charge jusqu'à 100 %, terminée ou désactivée. Les attributs indiquent le jour, le motif de fin et l'état de chaque batterie.",
+    predictive_charging_active: "Actif tant qu'un créneau de charge prédictive charge. Les attributs montrent le plan : le bilan énergétique, les créneaux choisis et leurs prix, les échéances et le motif de la décision.",
     temp_charge_limit: "Activé : « Limite de charge par température » s'applique et ses réglages ci-dessous s'affichent. Par défaut : désactivé.",
     capacity_protection: "Activé : « Réserve pour écrêtement de pointe » s'applique et ses réglages ci-dessous s'affichent. Par défaut : désactivé.",
     system_power_limits: "Activé : « Limites de puissance du système » s'applique et ses réglages ci-dessous s'affichent. Par défaut : désactivé.",
@@ -1798,6 +1810,8 @@ const SYS_HELP = {
     round_trip_efficiency: "Rendement aller-retour de la batterie (kWh sortis / kWh entrés), servant à valoriser l'énergie stockée pour la marge d'arbitrage et la vente à prix élevé. Des valeurs plus basses rendent le contrôle plus strict. Avec « utiliser la mesure » activé, il affiche la valeur mesurée sur vos batteries. Par défaut : mesuré (0,85 jusqu'à ce qu'une batterie ait 50 cycles).",
   },
   nl: {
+    weekly_full_charge: "Status van de volledige lading van deze week: inactief, ladend tot 100 %, voltooid of uitgeschakeld. De attributen tonen de dag, de reden van afronding en de status van elke batterij.",
+    predictive_charging_active: "Aan zolang een voorspellend laadslot laadt. De attributen tonen het plan: de energiebalans, de gekozen slots met hun prijzen, de deadlines en de reden van de beslissing.",
     temp_charge_limit: "Aan: ‘Temperatuurbegrenzing laden’ geldt en de instellingen hieronder worden getoond. Standaard: uit.",
     capacity_protection: "Aan: ‘Reserve voor piekbegrenzing’ geldt en de instellingen hieronder worden getoond. Standaard: uit.",
     system_power_limits: "Aan: ‘Systeemvermogenslimieten’ geldt en de instellingen hieronder worden getoond. Standaard: uit.",
