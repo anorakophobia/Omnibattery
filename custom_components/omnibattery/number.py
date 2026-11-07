@@ -447,6 +447,25 @@ def config_number_bounds(definition: dict, data) -> tuple[float, float]:
     )
 
 
+def config_number_default(hass, entry, definition: dict):
+    """A CONFIG_NUMBER_DEFINITIONS entry's default, in stored units.
+
+    A callable default is sized to the fleet the controller sees, reported
+    battery capacities included, so the slider, its "use default" switch and the
+    controller agree on one figure.
+    """
+    default = definition["default"]
+    if not callable(default):
+        return default
+    controller = (
+        (getattr(hass, "data", None) or {}).get(DOMAIN, {})
+        .get(getattr(entry, "entry_id", None), {})
+        .get("controller")
+    )
+    reported = getattr(controller, "_reported_battery_capacity_kwh", None)
+    return default(entry.data, reported() if callable(reported) else None)
+
+
 class MarstekConfigNumberEntity(NumberEntity):
     """Number entity for system-level configuration parameters (PD controller, etc.)."""
 
@@ -505,18 +524,17 @@ class MarstekConfigNumberEntity(NumberEntity):
     @property
     def native_value(self):
         """Return the current value from config_entry.data, in display units."""
-        default = self._definition["default"]
-        if callable(default):
-            # The same fleet the controller sizes it to, reported capacities included.
-            controller = (
-                (getattr(self.hass, "data", None) or {}).get(DOMAIN, {})
-                .get(getattr(self.entry, "entry_id", None), {})
-                .get("controller")
-            )
-            reported = getattr(controller, "_reported_battery_capacity_kwh", None)
-            default = default(self.entry.data, reported() if callable(reported) else None)
-        raw = self.entry.data.get(self._key, default)
+        raw = self.entry.data.get(
+            self._key, config_number_default(self.hass, self.entry, self._definition)
+        )
         return raw / self._scale
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        """Whether a setting with a "use default" switch currently follows its default."""
+        if not self._definition.get("default_switch"):
+            return None
+        return {"uses_default": self._key not in self.entry.data}
 
     async def async_set_native_value(self, value: float) -> None:
         """Update the value in config_entry.data and hot-reload controller."""
