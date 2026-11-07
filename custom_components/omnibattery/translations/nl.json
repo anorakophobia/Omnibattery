@@ -1478,7 +1478,7 @@
         "name": "Temperatuurbegrenzing ontladen"
       },
       "weekly_full_charge_delay": {
-        "name": "Wekelijkse Volledige Lading Vertragen"
+        "name": "Wekelijkse volledige lading: wachten op laadvertraging"
       },
       "capacity_protection": {
         "name": "Piekbegrenzing"

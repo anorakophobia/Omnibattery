@@ -1473,7 +1473,7 @@
         "name": "Temperature Discharge Limit"
       },
       "weekly_full_charge_delay": {
-        "name": "Delay Weekly Full Charge"
+        "name": "Weekly Full Charge: Wait for Charge Delay"
       },
       "capacity_protection": {
         "name": "Peak Shaving"
