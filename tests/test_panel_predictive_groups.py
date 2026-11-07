@@ -163,3 +163,16 @@ def test_status_rows_are_named_as_status():
         row = re.search(rf'\{{ key: "{key}",[^}}]*\}}', card).group(0)
         assert f'lk: "{lk}"' in row
     assert panel.count("statusSurplusHold:") == 6
+
+
+def test_the_weekly_delay_shows_only_with_charge_delay_on():
+    # It acts only inside the Charge Delay checks; that switch is on another
+    # card, so the chain looks it up globally and every patch re-checks it.
+    panel = PANEL.read_text(encoding="utf-8")
+    start = panel.index('tk: "secWeeklyFull"')
+    card = panel[start : panel.index("],", start)]
+    row = re.search(r'\{ key: "weekly_full_charge_delay",[^}]*\}', card).group(0)
+    assert 'dep: "charge_delay"' in row
+    assert "const other = this._sysEntityId(dep);" in panel
+    assert "store[DEP_REFRESH].push(refreshDeps);" in panel
+    assert "for (const refresh of this[storeKey][DEP_REFRESH] || []) refresh();" in panel
