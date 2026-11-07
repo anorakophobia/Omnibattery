@@ -54,7 +54,7 @@ const DAILY_OPERATION_SUNSET_ZERO_INTERVALS = 4;
 // names in translations/*.json so the panel reads consistently with HA.
 const I18N = {
   en: {
-    subtitle: "Control Panel", statusSurplusHold: "Surplus price hold status", statusDischargeReserve: "Discharge reserve status", statusPredischarge: "Smart pre-discharge status", statusPredictive: "Predictive charging status", statusWeekly: "Weekly full charge status",
+    subtitle: "Control Panel", statusSurplusHold: "Surplus price hold status", statusDischargeReserve: "Discharge reserve status", statusPredischarge: "Smart pre-discharge status", statusPredictive: "Predictive charging status", statusWeekly: "Weekly full charge status", typeExcluded: "excluded", typeAdditional: "additional",
     live: "Live",
     evCharger: "EV charger",
     flowToggle: "Switch diagram",
@@ -145,7 +145,7 @@ const I18N = {
     slotStateLabel: "State", slotActiveWord: "active", slotInactiveWord: "inactive",
   },
   es: {
-    subtitle: "Panel de Control", statusSurplusHold: "Estado de retención de excedente por precio", statusDischargeReserve: "Estado de reserva de descarga", statusPredischarge: "Estado de predescarga inteligente", statusPredictive: "Estado de la carga predictiva", statusWeekly: "Estado de la carga semanal completa",
+    subtitle: "Panel de Control", statusSurplusHold: "Estado de retención de excedente por precio", statusDischargeReserve: "Estado de reserva de descarga", statusPredischarge: "Estado de predescarga inteligente", statusPredictive: "Estado de la carga predictiva", statusWeekly: "Estado de la carga semanal completa", typeExcluded: "excluido", typeAdditional: "adicional",
     live: "En vivo",
     evCharger: "Cargador VE",
     flowToggle: "Cambiar diagrama",
@@ -236,7 +236,7 @@ const I18N = {
     slotStateLabel: "Estado", slotActiveWord: "activa", slotInactiveWord: "inactiva",
   },
   ca: {
-    subtitle: "Tauler de control", statusSurplusHold: "Estat de retenció d'excedent per preu", statusDischargeReserve: "Estat de reserva de descàrrega", statusPredischarge: "Estat de predescàrrega intel·ligent", statusPredictive: "Estat de la càrrega predictiva", statusWeekly: "Estat de la càrrega setmanal completa",
+    subtitle: "Tauler de control", statusSurplusHold: "Estat de retenció d'excedent per preu", statusDischargeReserve: "Estat de reserva de descàrrega", statusPredischarge: "Estat de predescàrrega intel·ligent", statusPredictive: "Estat de la càrrega predictiva", statusWeekly: "Estat de la càrrega setmanal completa", typeExcluded: "exclòs", typeAdditional: "addicional",
     ctlLock: "Bloqueja els controls", ctlUnlock: "Desbloqueja els controls",
     live: "En directe",
     evCharger: "Carregador VE",
@@ -323,7 +323,7 @@ const I18N = {
     slotStateLabel: "Estat", slotActiveWord: "activa", slotInactiveWord: "inactiva",
   },
   de: {
-    subtitle: "Bedienfeld", statusSurplusHold: "Status Preisbremse Solarüberschuss", statusDischargeReserve: "Status Entladereserve", statusPredischarge: "Status intelligente Vorentladung", statusPredictive: "Status prädiktives Laden", statusWeekly: "Status wöchentliche Vollladung",
+    subtitle: "Bedienfeld", statusSurplusHold: "Status Preisbremse Solarüberschuss", statusDischargeReserve: "Status Entladereserve", statusPredischarge: "Status intelligente Vorentladung", statusPredictive: "Status prädiktives Laden", statusWeekly: "Status wöchentliche Vollladung", typeExcluded: "ausgeschlossen", typeAdditional: "zusätzlich",
     ctlLock: "Steuerelemente sperren", ctlUnlock: "Steuerelemente entsperren",
     live: "Live",
     evCharger: "E-Auto-Lader",
@@ -410,7 +410,7 @@ const I18N = {
     slotStateLabel: "Status", slotActiveWord: "aktiv", slotInactiveWord: "inaktiv",
   },
   fr: {
-    subtitle: "Panneau de contrôle", statusSurplusHold: "État de la retenue de surplus", statusDischargeReserve: "État de la réserve de décharge", statusPredischarge: "État de la pré-décharge intelligente", statusPredictive: "État de la charge prédictive", statusWeekly: "État de la charge complète hebdomadaire",
+    subtitle: "Panneau de contrôle", statusSurplusHold: "État de la retenue de surplus", statusDischargeReserve: "État de la réserve de décharge", statusPredischarge: "État de la pré-décharge intelligente", statusPredictive: "État de la charge prédictive", statusWeekly: "État de la charge complète hebdomadaire", typeExcluded: "exclu", typeAdditional: "supplémentaire",
     ctlLock: "Verrouiller les commandes", ctlUnlock: "Déverrouiller les commandes",
     live: "En direct",
     evCharger: "Chargeur VE",
@@ -497,7 +497,7 @@ const I18N = {
     slotStateLabel: "État", slotActiveWord: "actif", slotInactiveWord: "inactif",
   },
   nl: {
-    subtitle: "Bedieningspaneel", statusSurplusHold: "Status prijsrem zonne-overschot", statusDischargeReserve: "Status ontlaadreserve", statusPredischarge: "Status slim voorontladen", statusPredictive: "Status voorspellend laden", statusWeekly: "Status wekelijkse volledige lading",
+    subtitle: "Bedieningspaneel", statusSurplusHold: "Status prijsrem zonne-overschot", statusDischargeReserve: "Status ontlaadreserve", statusPredischarge: "Status slim voorontladen", statusPredictive: "Status voorspellend laden", statusWeekly: "Status wekelijkse volledige lading", typeExcluded: "uitgesloten", typeAdditional: "extra",
     ctlLock: "Bediening vergrendelen", ctlUnlock: "Bediening ontgrendelen",
     live: "Live",
     evCharger: "EV-lader",
@@ -1107,11 +1107,13 @@ const SYS_SECTIONS = [
     // device ("{device} – Enabled" / "– Solar Surplus"), so always use it —
     // otherwise a single excluded device would show a generic, unidentifiable row.
     items: [
-      { key: "excluded_device_enabled", domain: "switch", lk: "itemExcludedDevice", icon: "mdi:power-plug-off", useName: true },
-      { key: "excluded_device_solar_surplus", domain: "switch", lk: "itemSolarSurplus", icon: "mdi:solar-power", useName: true },
-      { key: "excluded_device_dynamic_power_control", domain: "switch", lk: "itemDynamicPowerControl", icon: "mdi:ev-station", useName: true },
-      { key: "excluded_device_cover_home", domain: "switch", lk: "itemCoverHome", icon: "mdi:home-lightning-bolt", useName: true },
-      { key: "excluded_device_exclusion_pct", domain: "number", lk: "itemExclusionPct", icon: "mdi:battery-charging-50", useName: true },
+      // Rows are grouped per device (excluded_device_index), in this order,
+      // with a divider between devices; `dep` resolves within the same device.
+      { key: "excluded_device_enabled", domain: "switch", lk: "itemExcludedDevice", icon: "mdi:power-plug-off", useName: true, typeTag: true },
+      { key: "excluded_device_solar_surplus", domain: "switch", lk: "itemSolarSurplus", icon: "mdi:solar-power", useName: true, dep: "excluded_device_enabled" },
+      { key: "excluded_device_dynamic_power_control", domain: "switch", lk: "itemDynamicPowerControl", icon: "mdi:ev-station", useName: true, dep: "excluded_device_solar_surplus" },
+      { key: "excluded_device_cover_home", domain: "switch", lk: "itemCoverHome", icon: "mdi:home-lightning-bolt", useName: true, dep: "excluded_device_solar_surplus" },
+      { key: "excluded_device_exclusion_pct", domain: "number", lk: "itemExclusionPct", icon: "mdi:battery-charging-50", useName: true, dep: "excluded_device_enabled" },
     ],
   },
   {
@@ -1350,11 +1352,11 @@ const SYS_HELP = {
     secHourly: "Tracks grid import/export per hour and automatically adjusts the battery setpoint to achieve a target net energy balance.\n\n⚠️ Only useful in Spain, under the hourly surplus-compensation scheme (RD 244/2019), where grid surplus is settled hour by hour. In feed-in-tariff or annual-net-metering markets it provides no benefit and may cause lost export revenue and unnecessary battery cycling.",
     diagPeak: "When enabled, if battery SOC drops below a threshold, the system conserves energy by only discharging to offset consumption above a peak limit.",
     secSysLimits: "When enabled, the two sliders below cap the combined charge/discharge power of all active batteries.",
-    excluded_device_enabled: "✓ CHECKED = Home sensor ALREADY includes this device → Battery will NOT power it (excluded). ✗ UNCHECKED = Home sensor doesn't see it → Battery WILL power it (additional)",
-    excluded_device_solar_surplus: "If checked, the device will be able to consume energy directly from solar panels (surplus) without the battery trying to compensate. Recommended for high consumption devices like EV chargers.",
-    excluded_device_dynamic_power_control: "For devices that dynamically adjust their own demand using a grid meter. Requires Solar Surplus and an activity / EV charging sensor, which requests priority before power appears. Genuine leftover export may still charge the battery.",
-    excluded_device_cover_home: "If ON (needs Solar Surplus + a solar sensor), the battery covers the home's own load while this device runs, importing from grid only for the device itself. If OFF, the battery stays idle whenever the device is active.",
-    excluded_device_exclusion_pct: "How much of this device's demand stays excluded from the battery. 100% (default) = fully excluded (battery never powers it); lower values let the battery cover the rest (e.g. 60% → battery may cover 40%). Only affects devices with a power sensor.",
+    excluded_device_enabled: "On: Omnibattery handles this device as configured, as excluded (the home sensor includes it and the battery does not power it) or additional (the home sensor misses it and the battery covers it); the tag next to the name says which. Off: its handling is paused and it counts as ordinary home load. Default: on.",
+    excluded_device_solar_surplus: "On: the device may run on solar surplus directly, without the battery trying to compensate. Recommended for large loads such as EV chargers. Its two options below show while this is on. Default: off.",
+    excluded_device_dynamic_power_control: "For devices that adjust their own demand from a grid meter. Needs Solar surplus on and an activity / EV charging sensor, which asks for priority before power appears. Genuine leftover export may still charge the battery. Default: off.",
+    excluded_device_cover_home: "On (needs Solar surplus on and a solar sensor): the battery covers the home's own load while this device runs, and the grid supplies only the device. Off: the battery stays idle whenever the device is active. Default: off.",
+    excluded_device_exclusion_pct: "How much of this device's demand stays excluded from the battery. 100 % = fully excluded (the battery never powers it); lower values let the battery cover the rest (e.g. 60 % → the battery may cover 40 %). Only for excluded devices with a power sensor, so additional devices do not show it. Default: 100 %.",
     weekly_full_charge_enabled: "On: the batteries charge to 100 % one day a week (chosen below) for cell balancing, then return to your configured max SOC. Default: off.",
     price_discharge_control: "On: the battery only discharges while the current price is at or above the discharge price floor; without a manual floor it uses the charge price ceiling, else today's average price. If time slots restrict discharge, both conditions must be met. Default: off.",
     reevaluate_dynamic_pricing: "Rebuilds today's predictive charge plan right now with the latest prices and solar forecast. Not needed after changing a setting here: that re-plans on its own. Use it after a change outside Omnibattery (solar forecast, price source, loads). In time slot mode it re-runs the balance on the next cycle inside a charging window.",
@@ -1451,11 +1453,11 @@ const SYS_HELP = {
     secHourly: "Registra la importación/exportación de red por hora y ajusta automáticamente el setpoint de la batería para alcanzar un balance de energía objetivo.\n\n⚠️ Solo tiene utilidad en España, bajo el esquema de compensación de excedentes horaria (RD 244/2019), donde el excedente vertido a la red se liquida hora a hora. En mercados con tarifa de inyección (feed-in) o balance neto anual no aporta beneficio y puede causar pérdida de ingresos por exportación y ciclado innecesario de la batería.",
     diagPeak: "Si se activa, cuando el SOC de la batería baje de un umbral, el sistema conservará energía descargando solo para cubrir consumo que supere un límite pico.",
     secSysLimits: "Al activarlo, los dos sliders inferiores limitan la potencia combinada de carga/descarga de todas las baterias activas.",
-    excluded_device_enabled: "✓ MARCADO = El sensor de consumo del hogar YA incluye este dispositivo → La batería NO lo alimentará (excluido). ✗ DESMARCADO = El sensor del hogar NO lo ve → La batería SÍ lo alimentará (adicional)",
-    excluded_device_solar_surplus: "Si se marca, el dispositivo podrá consumir energía directamente de los paneles solares (excedente) sin que la batería intente compensarlo. Se recomienda marcar para dispositivos de gran consumo como cargadores de VE.",
-    excluded_device_dynamic_power_control: "Para dispositivos que ajustan dinámicamente su demanda mediante un contador de red. Requiere Excedente Solar y un sensor de actividad / carga del VE, que pide prioridad antes de que aparezca potencia. El excedente residual real todavía puede cargar la batería.",
-    excluded_device_cover_home: "Si se activa (requiere Excedente Solar + sensor solar), la batería cubre el consumo propio del hogar mientras el dispositivo funciona, importando de red solo para el dispositivo. Si se desactiva, la batería permanece inactiva mientras el dispositivo esté activo.",
-    excluded_device_exclusion_pct: "Qué parte de la demanda de este aparato se mantiene excluida de la batería. 100% (por defecto) = totalmente excluido (la batería nunca lo alimenta); valores menores dejan que la batería cubra el resto (ej. 60% → la batería puede cubrir el 40%). Solo afecta a aparatos con sensor de potencia.",
+    excluded_device_enabled: "Activado: Omnibattery gestiona este aparato como está configurado, como excluido (el sensor del hogar lo incluye y la batería no lo alimenta) o adicional (el sensor del hogar no lo ve y la batería lo cubre); la etiqueta junto al nombre indica cuál. Desactivado: su gestión se pausa y cuenta como consumo normal del hogar. Por defecto: activado.",
+    excluded_device_solar_surplus: "Activado: el aparato puede consumir directamente el excedente solar, sin que la batería intente compensarlo. Recomendado para cargas grandes como cargadores de VE. Sus dos opciones de abajo se muestran mientras está activado. Por defecto: desactivado.",
+    excluded_device_dynamic_power_control: "Para aparatos que ajustan su demanda a partir de un contador de red. Requiere Excedente solar activado y un sensor de actividad / carga del VE, que pide prioridad antes de que aparezca potencia. El excedente residual real todavía puede cargar la batería. Por defecto: desactivado.",
+    excluded_device_cover_home: "Activado (requiere Excedente solar activado y un sensor solar): la batería cubre el consumo propio del hogar mientras el aparato funciona, y la red solo abastece al aparato. Desactivado: la batería permanece inactiva mientras el aparato esté activo. Por defecto: desactivado.",
+    excluded_device_exclusion_pct: "Qué parte de la demanda de este aparato se mantiene excluida de la batería. 100 % = totalmente excluido (la batería nunca lo alimenta); valores menores dejan que la batería cubra el resto (ej. 60 % → la batería puede cubrir el 40 %). Solo para aparatos excluidos con sensor de potencia, por eso los adicionales no lo muestran. Por defecto: 100 %.",
     weekly_full_charge_enabled: "Activado: las baterías se cargan al 100 % un día a la semana (elegido abajo) para equilibrar las celdas y después vuelven al SOC máximo configurado. Por defecto: desactivado.",
     price_discharge_control: "Activado: la batería solo descarga mientras el precio actual está en o por encima del suelo de precio de descarga; sin suelo manual usa el techo de precio de carga y, si no hay, el precio medio de hoy. Si las franjas horarias restringen la descarga, deben cumplirse ambas condiciones. Por defecto: desactivado.",
     reevaluate_dynamic_pricing: "Recalcula ahora mismo la planificación de carga predictiva de hoy con los precios y la previsión solar más recientes. No hace falta tras cambiar un ajuste aquí: eso replanifica por sí solo. Úsalo tras un cambio fuera de Omnibattery (previsión solar, fuente de precios, cargas). En modo franja horaria vuelve a evaluar el balance en el siguiente ciclo dentro de una ventana de carga.",
@@ -1552,11 +1554,11 @@ const SYS_HELP = {
     secHourly: "Registra la importació/exportació de xarxa per hora i ajusta automàticament el setpoint de la bateria per assolir un balanç d'energia objectiu.\n\n⚠️ Només té utilitat a Espanya, sota l'esquema de compensació d'excedents horària (RD 244/2019), on l'excedent abocat a la xarxa es liquida hora a hora. En mercats amb tarifa d'injecció (feed-in) o balanç net anual no aporta cap benefici i pot causar pèrdua d'ingressos per exportació i cicles innecessaris de la bateria.",
     diagPeak: "Si s'activa, quan el SOC de la bateria baixi d'un llindar, el sistema conservarà energia descarregant només per cobrir consum que superi un límit de pic.",
     secSysLimits: "En activar-lo, els dos sliders inferiors limiten la potència combinada de càrrega/descàrrega de totes les bateries actives.",
-    excluded_device_enabled: "✓ MARCAT = El sensor de consum de la llar JA inclou aquest dispositiu → La bateria NO l'alimentarà (exclòs). ✗ DESMARCAT = El sensor de la llar NO el veu → La bateria SÍ l'alimentarà (addicional)",
-    excluded_device_solar_surplus: "Si es marca, el dispositiu podrà consumir energia directament dels panells solars (excedent) sense que la bateria intenti compensar-ho. Es recomana marcar per a dispositius de gran consum com carregadors de VE.",
-    excluded_device_dynamic_power_control: "Per a dispositius que ajusten dinàmicament la demanda mitjançant un comptador de xarxa. Requereix Excedent Solar i un sensor d'activitat / càrrega del VE, que demana prioritat abans que aparegui potència. L'excedent residual real encara pot carregar la bateria.",
-    excluded_device_cover_home: "Si s'activa (requereix Excedent Solar + sensor solar), la bateria cobreix el consum propi de la llar mentre el dispositiu funciona, important de xarxa només per al dispositiu. Si es desactiva, la bateria roman inactiva mentre el dispositiu estigui actiu.",
-    excluded_device_exclusion_pct: "Quina part de la demanda d'aquest aparell es manté exclosa de la bateria. 100% (per defecte) = totalment exclòs (la bateria mai no l'alimenta); valors menors deixen que la bateria cobreixi la resta (p. ex. 60% → la bateria pot cobrir el 40%). Només afecta aparells amb sensor de potència.",
+    excluded_device_enabled: "Activat: Omnibattery gestiona aquest aparell tal com està configurat, com a exclòs (el sensor de la llar l'inclou i la bateria no l'alimenta) o addicional (el sensor de la llar no el veu i la bateria el cobreix); l'etiqueta al costat del nom indica quin. Desactivat: la seva gestió es pausa i compta com a consum normal de la llar. Per defecte: activat.",
+    excluded_device_solar_surplus: "Activat: l'aparell pot consumir directament l'excedent solar, sense que la bateria intenti compensar-ho. Recomanat per a càrregues grans com carregadors de VE. Les seves dues opcions de sota es mostren mentre està activat. Per defecte: desactivat.",
+    excluded_device_dynamic_power_control: "Per a aparells que ajusten la demanda a partir d'un comptador de xarxa. Requereix Excedent solar activat i un sensor d'activitat / càrrega del VE, que demana prioritat abans que aparegui potència. L'excedent residual real encara pot carregar la bateria. Per defecte: desactivat.",
+    excluded_device_cover_home: "Activat (requereix Excedent solar activat i un sensor solar): la bateria cobreix el consum propi de la llar mentre l'aparell funciona, i la xarxa només abasteix l'aparell. Desactivat: la bateria roman inactiva mentre l'aparell estigui actiu. Per defecte: desactivat.",
+    excluded_device_exclusion_pct: "Quina part de la demanda d'aquest aparell es manté exclosa de la bateria. 100 % = totalment exclòs (la bateria mai no l'alimenta); valors menors deixen que la bateria cobreixi la resta (p. ex. 60 % → la bateria pot cobrir el 40 %). Només per a aparells exclosos amb sensor de potència, per això els addicionals no el mostren. Per defecte: 100 %.",
     weekly_full_charge_enabled: "Activat: les bateries es carreguen al 100 % un dia a la setmana (triat a sota) per equilibrar les cel·les i després tornen al SOC màxim configurat. Per defecte: desactivat.",
     price_discharge_control: "Activat: la bateria només descarrega mentre el preu actual està en o per sobre del terra de preu de descàrrega; sense terra manual fa servir el sostre de preu de càrrega i, si no n'hi ha, el preu mitjà d'avui. Si les franges horàries restringeixen la descàrrega, s'han de complir totes dues condicions. Per defecte: desactivat.",
     reevaluate_dynamic_pricing: "Recalcula ara mateix la planificació de càrrega predictiva d'avui amb els preus i la previsió solar més recents. No cal després de canviar un ajust aquí: això replanifica tot sol. Fes-lo servir després d'un canvi fora d'Omnibattery (previsió solar, font de preus, càrregues). En mode franja horària torna a avaluar el balanç en el cicle següent dins d'una finestra de càrrega.",
@@ -1653,11 +1655,11 @@ const SYS_HELP = {
     secHourly: "Erfasst Netzimport/-export pro Stunde und passt den Batterie-Sollwert automatisch an, um eine Ziel-Nettoenergiebilanz zu erreichen.\n\n⚠️ Nur in Spanien sinnvoll, im Rahmen der stündlichen Überschussvergütung (RD 244/2019), bei der Netzüberschuss stundenweise abgerechnet wird. In Märkten mit Einspeisevergütung oder jährlichem Netzausgleich bietet sie keinen Nutzen und kann zu Einnahmeverlusten bei der Einspeisung und unnötigen Batteriezyklen führen.",
     diagPeak: "Wenn aktiviert und der Batterie-SOC unter einen Schwellenwert fällt, spart das System Energie, indem es nur entlädt, um Verbrauch über einem Spitzenlimit auszugleichen.",
     secSysLimits: "Wenn aktiviert, begrenzen die beiden Schieberegler unten die kombinierte Lade-/Entladeleistung aller aktiven Batterien.",
-    excluded_device_enabled: "✓ AKTIVIERT = Hausverbrauchssensor erfasst dieses Gerät BEREITS → Batterie versorgt es NICHT (ausgeschlossen). ✗ DEAKTIVIERT = Hausverbrauchssensor erfasst es nicht → Batterie versorgt es (zusätzlich)",
-    excluded_device_solar_surplus: "Wenn aktiviert, kann das Gerät Energie direkt von den Solarmodulen (Überschuss) beziehen, ohne dass die Batterie versucht auszugleichen. Empfohlen für Geräte mit hohem Verbrauch wie EV-Ladegeräte.",
-    excluded_device_dynamic_power_control: "Für Geräte, die ihren Bedarf über einen Netzzähler dynamisch regeln. Benötigt Solarüberschuss und einen Aktivitäts-/EV-Ladestatussensor, der Vorrang anfordert, bevor Leistung erscheint. Echter Restüberschuss kann weiterhin die Batterie laden.",
-    excluded_device_cover_home: "Wenn aktiviert (benötigt Solarüberschuss + Solarsensor), deckt die Batterie den Eigenverbrauch des Hauses, während dieses Gerät läuft, und bezieht Netzstrom nur für das Gerät selbst. Wenn deaktiviert, bleibt die Batterie inaktiv, solange das Gerät aktiv ist.",
-    excluded_device_exclusion_pct: "Wie viel des Bedarfs dieses Geräts von der Batterie ausgeschlossen bleibt. 100 % (Standard) = vollständig ausgeschlossen (die Batterie versorgt es nie); niedrigere Werte lassen die Batterie den Rest abdecken (z. B. 60 % → die Batterie darf 40 % abdecken). Betrifft nur Geräte mit Leistungssensor.",
+    excluded_device_enabled: "Ein: Omnibattery behandelt dieses Gerät wie eingerichtet, als ausgeschlossen (der Haussensor erfasst es, die Batterie versorgt es nicht) oder zusätzlich (der Haussensor erfasst es nicht, die Batterie deckt es); das Etikett neben dem Namen zeigt, welches. Aus: die Behandlung pausiert und es zählt als gewöhnlicher Hausverbrauch. Standard: ein.",
+    excluded_device_solar_surplus: "Ein: das Gerät darf direkt Solarüberschuss nutzen, ohne dass die Batterie auszugleichen versucht. Empfohlen für große Lasten wie EV-Ladegeräte. Seine zwei Optionen darunter erscheinen, solange dies an ist. Standard: aus.",
+    excluded_device_dynamic_power_control: "Für Geräte, die ihren Bedarf über einen Netzzähler selbst regeln. Benötigt Solarüberschuss an und einen Aktivitäts-/EV-Ladestatussensor, der Vorrang anfordert, bevor Leistung erscheint. Echter Restüberschuss kann weiterhin die Batterie laden. Standard: aus.",
+    excluded_device_cover_home: "Ein (benötigt Solarüberschuss an und einen Solarsensor): die Batterie deckt den Eigenverbrauch des Hauses, während dieses Gerät läuft, und das Netz versorgt nur das Gerät. Aus: die Batterie bleibt inaktiv, solange das Gerät aktiv ist. Standard: aus.",
+    excluded_device_exclusion_pct: "Wie viel des Bedarfs dieses Geräts von der Batterie ausgeschlossen bleibt. 100 % = vollständig ausgeschlossen (die Batterie versorgt es nie); niedrigere Werte lassen die Batterie den Rest abdecken (z. B. 60 % → die Batterie darf 40 % abdecken). Nur für ausgeschlossene Geräte mit Leistungssensor, zusätzliche Geräte zeigen es daher nicht. Standard: 100 %.",
     weekly_full_charge_enabled: "Ein: die Batterien laden einmal pro Woche (unten gewählter Tag) zum Zellausgleich auf 100 % und kehren dann zum konfigurierten max. SOC zurück. Standard: aus.",
     price_discharge_control: "Ein: die Batterie entlädt nur, solange der aktuelle Preis auf oder über der Entlade-Preisuntergrenze liegt; ohne manuelle Untergrenze gilt die Lade-Preisobergrenze, sonst der heutige Durchschnittspreis. Wenn Zeitfenster die Entladung einschränken, müssen beide Bedingungen erfüllt sein. Standard: aus.",
     reevaluate_dynamic_pricing: "Erstellt den heutigen prädiktiven Ladeplan sofort neu, mit den aktuellsten Preisen und der Solarprognose. Nach einer Einstellungsänderung hier nicht nötig: die plant von selbst neu. Nutze ihn nach einer Änderung außerhalb von Omnibattery (Solarprognose, Preisquelle, Lasten). Im Zeitfenster-Modus wird die Bilanz im nächsten Zyklus innerhalb eines Ladefensters neu berechnet.",
@@ -1754,11 +1756,11 @@ const SYS_HELP = {
     secHourly: "Suit l'import/export réseau par heure et ajuste automatiquement la consigne de la batterie pour atteindre un bilan énergétique net cible.\n\n⚠️ Utile uniquement en Espagne, dans le cadre du régime de compensation horaire des surplus (RD 244/2019), où le surplus injecté sur le réseau est réglé heure par heure. Sur les marchés avec tarif de rachat (feed-in) ou bilan net annuel, elle n'offre aucun avantage et peut entraîner une perte de revenus d'injection et des cycles de batterie inutiles.",
     diagPeak: "Si activé, lorsque le SOC de la batterie descend sous un seuil, le système conserve l'énergie en ne déchargeant que pour compenser la consommation au-dessus d'une limite de pic.",
     secSysLimits: "Si activé, les deux curseurs ci-dessous plafonnent la puissance combinée de charge/décharge de toutes les batteries actives.",
-    excluded_device_enabled: "✓ COCHÉ = Le capteur domestique inclut DÉJÀ cet appareil → La batterie ne l'alimentera PAS (exclu). ✗ DÉCOCHÉ = Le capteur domestique ne le voit pas → La batterie l'alimentera (additionnel)",
-    excluded_device_solar_surplus: "Si coché, l'appareil pourra consommer l'énergie directement des panneaux solaires (excédent) sans que la batterie tente de compenser. Recommandé pour les appareils à forte consommation comme les chargeurs de VE.",
-    excluded_device_dynamic_power_control: "Pour les appareils qui ajustent dynamiquement leur demande à partir d'un compteur réseau. Nécessite Surplus Solaire et un capteur d'activité / charge VE, qui demande la priorité avant l'apparition de puissance. Le surplus réellement restant peut encore charger la batterie.",
-    excluded_device_cover_home: "Si activé (nécessite Surplus Solaire + capteur solaire), la batterie couvre la consommation propre de la maison pendant que cet appareil fonctionne, n'important du réseau que pour l'appareil. Si désactivé, la batterie reste inactive tant que l'appareil est actif.",
-    excluded_device_exclusion_pct: "Quelle part de la demande de cet appareil reste exclue de la batterie. 100 % (par défaut) = totalement exclu (la batterie ne l'alimente jamais) ; des valeurs plus faibles laissent la batterie couvrir le reste (ex. 60 % → la batterie peut couvrir 40 %). N'affecte que les appareils dotés d'un capteur de puissance.",
+    excluded_device_enabled: "Activé : Omnibattery traite cet appareil comme configuré, comme exclu (le capteur du foyer l'inclut et la batterie ne l'alimente pas) ou supplémentaire (le capteur du foyer ne le voit pas et la batterie le couvre) ; l'étiquette à côté du nom indique lequel. Désactivé : son traitement est suspendu et il compte comme consommation ordinaire du foyer. Par défaut : activé.",
+    excluded_device_solar_surplus: "Activé : l'appareil peut consommer directement le surplus solaire, sans que la batterie tente de compenser. Recommandé pour les grosses charges comme les chargeurs de VE. Ses deux options ci-dessous s'affichent tant que ceci est activé. Par défaut : désactivé.",
+    excluded_device_dynamic_power_control: "Pour les appareils qui ajustent leur demande à partir d'un compteur réseau. Nécessite Surplus solaire activé et un capteur d'activité / charge VE, qui demande la priorité avant l'apparition de puissance. Le surplus réellement restant peut encore charger la batterie. Par défaut : désactivé.",
+    excluded_device_cover_home: "Activé (nécessite Surplus solaire activé et un capteur solaire) : la batterie couvre la consommation propre de la maison pendant que cet appareil fonctionne, et le réseau n'alimente que l'appareil. Désactivé : la batterie reste inactive tant que l'appareil est actif. Par défaut : désactivé.",
+    excluded_device_exclusion_pct: "Quelle part de la demande de cet appareil reste exclue de la batterie. 100 % = totalement exclu (la batterie ne l'alimente jamais) ; des valeurs plus faibles laissent la batterie couvrir le reste (ex. 60 % → la batterie peut couvrir 40 %). Uniquement pour les appareils exclus dotés d'un capteur de puissance, les appareils supplémentaires ne l'affichent donc pas. Par défaut : 100 %.",
     weekly_full_charge_enabled: "Activé : les batteries se chargent à 100 % un jour par semaine (choisi ci-dessous) pour équilibrer les cellules, puis reviennent au SOC max configuré. Par défaut : désactivé.",
     price_discharge_control: "Activé : la batterie ne se décharge que tant que le prix actuel est au niveau ou au-dessus du plancher de prix de décharge ; sans plancher manuel, elle utilise le plafond de prix de charge, sinon le prix moyen du jour. Si les plages horaires limitent la décharge, les deux conditions doivent être remplies. Par défaut : désactivé.",
     reevaluate_dynamic_pricing: "Recalcule immédiatement le plan de charge prédictive du jour avec les derniers prix et la prévision solaire. Inutile après avoir modifié un réglage ici : cela replanifie de soi-même. Utilise-le après un changement hors d'Omnibattery (prévision solaire, source de prix, charges). En mode plage horaire, le bilan est recalculé au cycle suivant dans une fenêtre de charge.",
@@ -1855,11 +1857,11 @@ const SYS_HELP = {
     secHourly: "Volgt netimport/-export per uur en past het batterij-setpoint automatisch aan om een gewenste netto-energiebalans te bereiken.\n\n⚠️ Alleen nuttig in Spanje, onder de regeling voor uurlijkse compensatie van overschotten (RD 244/2019), waarbij netoverschot per uur wordt verrekend. In markten met terugleververgoeding (feed-in) of jaarlijkse saldering biedt het geen voordeel en kan het leiden tot gemiste teruglever-inkomsten en onnodige batterijcycli.",
     diagPeak: "Indien ingeschakeld bespaart het systeem energie wanneer de batterij-SOC onder een drempel zakt, door alleen te ontladen om verbruik boven een pieklimiet te compenseren.",
     secSysLimits: "Indien ingeschakeld begrenzen de twee schuifregelaars hieronder het gecombineerde laad-/ontlaadvermogen van alle actieve batterijen.",
-    excluded_device_enabled: "✓ AANGEVINKT = Huissensor bevat dit apparaat AL → Batterij voedt het NIET (uitgesloten). ✗ NIET AANGEVINKT = Huissensor ziet het niet → Batterij voedt het WEL (aanvullend)",
-    excluded_device_solar_surplus: "Indien aangevinkt kan het apparaat energie rechtstreeks van de zonnepanelen (overschot) verbruiken zonder dat de batterij probeert te compenseren. Aanbevolen voor apparaten met hoog verbruik zoals EV-laders.",
-    excluded_device_dynamic_power_control: "Voor apparaten die hun vraag dynamisch via een netmeter regelen. Vereist Zonne-overschot en een activiteit-/EV-laadsensor, die voorrang vraagt voordat vermogen verschijnt. Echt resterend overschot kan de batterij nog steeds laden.",
-    excluded_device_cover_home: "Indien AAN (vereist Zonne-overschot + zonnesensor) dekt de batterij het eigen huisverbruik terwijl dit apparaat draait en importeert alleen netstroom voor het apparaat zelf. Indien UIT blijft de batterij inactief zolang het apparaat actief is.",
-    excluded_device_exclusion_pct: "Hoeveel van de vraag van dit apparaat buiten de batterij blijft. 100% (standaard) = volledig uitgesloten (de batterij voedt het nooit); lagere waarden laten de batterij de rest dekken (bv. 60% → de batterij mag 40% dekken). Alleen van invloed op apparaten met een vermogenssensor.",
+    excluded_device_enabled: "Aan: Omnibattery behandelt dit apparaat zoals ingesteld, als uitgesloten (de huissensor meet het en de batterij voedt het niet) of extra (de huissensor mist het en de batterij dekt het); het label naast de naam zegt welke. Uit: de behandeling is gepauzeerd en het telt als gewoon huisverbruik. Standaard: aan.",
+    excluded_device_solar_surplus: "Aan: het apparaat mag direct zonne-overschot gebruiken, zonder dat de batterij probeert te compenseren. Aanbevolen voor grote verbruikers zoals EV-laders. De twee opties hieronder verschijnen zolang dit aan staat. Standaard: uit.",
+    excluded_device_dynamic_power_control: "Voor apparaten die hun vraag zelf via een netmeter regelen. Vereist Zonne-overschot aan en een activiteit-/EV-laadsensor, die voorrang vraagt voordat vermogen verschijnt. Echt resterend overschot kan de batterij nog steeds laden. Standaard: uit.",
+    excluded_device_cover_home: "Aan (vereist Zonne-overschot aan en een zonnesensor): de batterij dekt het eigen huisverbruik terwijl dit apparaat draait, en het net voedt alleen het apparaat. Uit: de batterij blijft inactief zolang het apparaat actief is. Standaard: uit.",
+    excluded_device_exclusion_pct: "Hoeveel van de vraag van dit apparaat buiten de batterij blijft. 100 % = volledig uitgesloten (de batterij voedt het nooit); lagere waarden laten de batterij de rest dekken (bv. 60 % → de batterij mag 40 % dekken). Alleen voor uitgesloten apparaten met een vermogenssensor, extra apparaten tonen het dus niet. Standaard: 100 %.",
     weekly_full_charge_enabled: "Aan: de batterijen laden één dag per week (hieronder gekozen) tot 100 % voor celbalancering en keren daarna terug naar de geconfigureerde max. SOC. Standaard: uit.",
     price_discharge_control: "Aan: de batterij ontlaadt alleen zolang de huidige prijs op of boven de ontlaadprijsondergrens ligt; zonder handmatige ondergrens geldt het laadprijsplafond, anders de gemiddelde prijs van vandaag. Als tijdslots het ontladen beperken, moeten beide voorwaarden gelden. Standaard: uit.",
     reevaluate_dynamic_pricing: "Herberekent nu meteen het voorspellende laadplan van vandaag met de meest recente prijzen en zonneprognose. Niet nodig na het wijzigen van een instelling hier: dat plant vanzelf opnieuw. Gebruik het na een wijziging buiten Omnibattery (zonneprognose, prijsbron, belastingen). In tijdslotmodus wordt de balans in de volgende cyclus binnen een laadvenster opnieuw berekend.",
@@ -6826,8 +6828,14 @@ class MarstekVenusPanel extends HTMLElement {
           const alive = item.domain === "button" || unset
             ? st && st.state !== "unavailable"
             : st && st.state !== "unavailable" && st.state !== "unknown";
-          if (alive) {
-            rows.push({ item, id, multi: ids.length > 1 });
+          // an entity that says it does not apply (Exclusion % of an
+          // additional device) has no row
+          const applies = !st || !st.attributes || st.attributes.applies !== false;
+          if (alive && applies) {
+            const row = { item, id, multi: ids.length > 1 };
+            const device = st.attributes && st.attributes.excluded_device_index;
+            if (device != null) row.grp = `device${device}`;
+            rows.push(row);
           }
         }
       }
@@ -6836,11 +6844,18 @@ class MarstekVenusPanel extends HTMLElement {
       // their live entities by the displayed name instead, so adding a device
       // does not leave the card in registry/control-type order.
       if (sec.tk === "secExcluded") {
-        rows.sort((a, b) => {
-          const aName = this._entityShortName(this._hass.states[a.id], a.id);
-          const bName = this._entityShortName(this._hass.states[b.id], b.id);
-          return aName.localeCompare(bName, this._lang()) || a.id.localeCompare(b.id);
-        });
+        // devices by name, each device's rows in item order (Enabled first,
+        // its options after), so adding a device keeps the card readable
+        const device = (r) => {
+          const a = (this._hass.states[r.id] || {}).attributes || {};
+          return String(a.excluded_device ?? this._entityShortName(this._hass.states[r.id], r.id));
+        };
+        const order = (r) => sec.items.indexOf(r.item);
+        rows.sort((a, b) =>
+          device(a).localeCompare(device(b), this._lang())
+          || String(a.grp).localeCompare(String(b.grp))
+          || order(a) - order(b)
+          || a.id.localeCompare(b.id));
       }
       if (rows.length) {
         sections.push({ sec, rows });
@@ -6901,11 +6916,11 @@ class MarstekVenusPanel extends HTMLElement {
       // composes with the section gate.
       const depRows = [];
       for (const r of rows) {
-        const g = r.item.grp;
+        const g = r.grp ?? r.item.grp;
         if (g && lastGrp && g !== lastGrp) {
           const sep = document.createElement("div");
           sep.className = "sys-sep";
-          if (rows.filter((x) => x.item.grp === g).every((x) => x.item.adv)) sep.classList.add("adv-row");
+          if (rows.filter((x) => (x.grp ?? x.item.grp) === g).every((x) => x.item.adv)) sep.classList.add("adv-row");
           grid.appendChild(sep);
           gatedNodes.push(sep);
         }
@@ -6913,7 +6928,7 @@ class MarstekVenusPanel extends HTMLElement {
         const frag = this._buildSysControl(r.item, r.id, store, r.multi);
         const nodes = [...frag.childNodes];
         if (r.item.adv) for (const n of nodes) n.classList?.add("adv-row");
-        if (r.item.dep) depRows.push({ item: r.item, nodes });
+        if (r.item.dep) depRows.push({ item: r.item, nodes, grp: r.grp });
         grid.appendChild(frag);
         if (r.item.gate) gateKey = this._sysStoreKey(r.item, r.id);
         else gatedNodes.push(...nodes);
@@ -6926,7 +6941,10 @@ class MarstekVenusPanel extends HTMLElement {
         for (const n of gatedNodes) n.style.display = shown ? "" : "none";
       }
       if (depRows.length) {
-        const rowByKey = new Map(rows.map((r) => [r.item.key, r]));
+        // keyed per device for the per-device rows, so a device's option
+        // follows its own switch
+        const rowKey = (grp, key) => `${grp ?? ""}|${key}`;
+        const rowByKey = new Map(rows.map((r) => [rowKey(r.grp, r.item.key), r]));
         // Every switch on the way up; a parent that is not rendered ends the
         // chain (it cannot hide anything).
         for (const d of depRows) {
@@ -6934,10 +6952,11 @@ class MarstekVenusPanel extends HTMLElement {
           const seen = new Set();
           for (let dep = d.item.dep; dep && !seen.has(dep); ) {
             seen.add(dep);
-            const parent = rowByKey.get(dep);
+            const parent = rowByKey.get(rowKey(d.grp, dep));
             if (!parent) {
-              // a switch on another card (the weekly delay behind Charge Delay)
-              const other = this._sysEntityId(dep);
+              // a switch on another card (the weekly delay behind Charge Delay);
+              // a per-device row never looks outside its device
+              const other = d.grp == null ? this._sysEntityId(dep) : null;
               if (other) d.ids.push(other);
               break;
             }
@@ -7399,6 +7418,17 @@ class MarstekVenusPanel extends HTMLElement {
           e.stopPropagation();
           this._showInfoPopover(k, help);
         });
+      }
+    }
+    if (item.typeTag) {
+      // excluded (the home sensor includes it) or additional (the battery
+      // covers it): the setting that matters most, otherwise only in setup
+      const type = state && state.attributes && state.attributes.type;
+      if (type) {
+        const tag = document.createElement("span");
+        tag.className = "ctl-type";
+        tag.textContent = this._t(type === "additional" ? "typeAdditional" : "typeExcluded");
+        k.appendChild(tag);
       }
     }
     frag.appendChild(k);
@@ -8104,6 +8134,7 @@ class MarstekVenusPanel extends HTMLElement {
       .ctl-num input[type="range"] { flex: 1 1 auto; accent-color: var(--accent); cursor: pointer; min-width: 0; }
       .ctl-num .ctl-val { font-family: var(--font-display); font-variant-numeric: tabular-nums; font-size: 13px; color: var(--ink); white-space: nowrap; min-width: 56px; text-align: right; }
       .ctl-num .ctl-default { font-size: 11px; color: var(--ink-dim); white-space: nowrap; }
+      .ctl-k .ctl-type { margin-left: 6px; font-size: 11px; color: var(--ink-dim); white-space: nowrap; }
       .ctl-num .ctl-val-edit { cursor: text; text-decoration: underline dotted var(--ink-dim); text-underline-offset: 3px; }
       .ctl-num .ctl-val-input { width: 72px; font-family: var(--font-display); font-size: 13px; color: var(--ink); background: var(--bg-2); border: 1px solid var(--accent-line); border-radius: 6px; padding: 2px 6px; text-align: right; }
       .ctl-btn { grid-column: 1 / -1; display: inline-flex; align-items: center; justify-content: center; gap: 7px; width: 100%; padding: 8px 12px; border-radius: 11px; border: 1px solid var(--line-strong); background: var(--bg-2); color: var(--ink-mid); font-family: var(--font-ui); font-weight: 600; font-size: 13px; cursor: pointer; --mdc-icon-size: 16px; transition: background 0.15s, color 0.15s; }
