@@ -168,6 +168,7 @@ NO_DEFAULT = (
     "predictive_charging_active",
     "weekly_full_charge",
     "temperature_charge_limit_status",
+    "excluded_device_status",
 )
 
 
