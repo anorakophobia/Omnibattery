@@ -8,7 +8,7 @@
 
 ### Changed
 
-- **Panel: the predictive charging card has one group per feature**: the solar safety margin, the SOC floor, the charge price and the discharge price each get their own group and divider, in the order buy, use, sell, solar surplus. The discharge price floor and its manual switch now sit with Discharge only above price, the only feature that reads them, and show only while it is on. Thanks to @anorakophobia.
+- **Panel: the predictive charging card has one group per feature**: the solar safety margin, the SOC floor, the charge price and the discharge price each get their own group and divider, in the order buy, use, sell, solar surplus. The discharge price floor and its manual switch now sit with Discharge only above price, the only feature that reads them, and show only while it is on. Every feature's settings (Guaranteed Minimum SOC, the two minimum savings, the smart pre-discharge threshold and reserve) likewise show only while the feature is on. Thanks to @anorakophobia.
 
 ### Fixed
 

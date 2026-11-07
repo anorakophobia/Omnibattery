@@ -8,6 +8,8 @@ assertions on the raw panel source, same style as the other panel tests.
 import re
 from pathlib import Path
 
+import pytest
+
 
 PANEL = Path("custom_components/omnibattery/frontend/marstek-panel.js")
 
@@ -103,3 +105,22 @@ def test_the_discharge_floor_hides_with_its_feature():
     assert 'd.ids.every((id) => (this._hass.states[id] || {}).state === "on")' in body
     assert "w.depRefresh = refreshDeps;" in body
     assert "if (w.depRefresh) w.depRefresh();" in panel
+
+
+@pytest.mark.parametrize(
+    ("setting", "feature"),
+    [
+        ("predictive_min_soc_floor", "min_soc_floor_enabled"),
+        ("discharge_reserve_min_saving", "discharge_reserve"),
+        ("surplus_hold_min_saving", "surplus_price_hold"),
+        ("negative_injection_threshold", "smart_predischarge"),
+        ("predischarge_reserve_soc", "smart_predischarge"),
+    ],
+)
+def test_a_feature_s_settings_show_only_while_it_is_on(setting, feature):
+    panel = PANEL.read_text(encoding="utf-8")
+    start = panel.index('tk: "diagPredictive"')
+    card = panel[start : panel.index('tk: "diagChargeDelay"', start)]
+    row = re.search(rf'\{{ key: "{setting}",[^}}]*\}}', card).group(0)
+    assert f'dep: "{feature}"' in row
+    assert f'key: "{feature}", domain: "switch"' in card
