@@ -12,9 +12,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .energy import effective_round_trip_efficiency
 from .number import config_number_default
 from .const import (
     CONFIG_NUMBER_DEFINITIONS,
+    CONF_ROUND_TRIP_EFFICIENCY,
     DOMAIN,
     CONF_CAPACITY_PROTECTION_ENABLED,
     CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES,
@@ -124,6 +126,8 @@ async def async_setup_entry(
         mode = entry.data.get(CONF_PREDICTIVE_CHARGING_MODE)
         if mode == PREDICTIVE_MODE_DYNAMIC_PRICING:
             entities.append(PriceDischargeControlSwitch(hass, entry, controller))
+            # beside the efficiency slider, which exists in this mode only
+            entities.append(RoundTripEfficiencyMeasuredSwitch(hass, entry, controller))
             entities.append(SmartPredischargeSwitch(hass, entry, controller))
             entities.append(NegativePriceChargingSwitch(hass, entry, controller))
         elif mode == PREDICTIVE_MODE_REALTIME_PRICE:
@@ -2401,13 +2405,15 @@ class ConfigNumberDefaultSwitch(SwitchEntity):
     turns this OFF. A manual value is not kept.
     """
 
+    _suffix = "use_default"
+
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller, definition: dict) -> None:
         self.hass = hass
         self.entry = entry
         self.controller = controller
         self._definition = definition
         self._key = definition["key"]
-        name = f"{self._key}_use_default"
+        name = f"{self._key}_{self._suffix}"
         self._attr_has_entity_name = True
         self._attr_translation_key = name
         self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}{name}"
@@ -2437,9 +2443,13 @@ class ConfigNumberDefaultSwitch(SwitchEntity):
         self._store(new_data)
         _LOGGER.info("%s follows its default again", self._key)
 
+    def _value_in_use(self):
+        """What the setting is while it follows its default, in stored units."""
+        return config_number_default(self.hass, self.entry, self._definition)
+
     async def async_turn_off(self, **kwargs) -> None:
         new_data = dict(self.entry.data)
-        new_data[self._key] = config_number_default(self.hass, self.entry, self._definition)
+        new_data[self._key] = self._value_in_use()
         self._store(new_data)
         _LOGGER.info("%s fixed at %s", self._key, new_data[self._key])
 
@@ -2451,6 +2461,29 @@ class ConfigNumberDefaultSwitch(SwitchEntity):
             "manufacturer": "Omnibattery",
             "model": "Multi-Battery System",
         }
+
+
+class RoundTripEfficiencyMeasuredSwitch(ConfigNumberDefaultSwitch):
+    """ON while the round-trip efficiency follows the batteries' measured value.
+
+    It replaces a hidden rule: a stored 0.85 (the default) used to mean "use
+    the measured value", so the slider showed 0.85 while about 0.82 was used
+    and a fixed 0.85 could not be set. Now no stored value means measured, and
+    OFF fixes the value in use.
+    """
+
+    _suffix = "use_measured"
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        super().__init__(
+            hass,
+            entry,
+            controller,
+            {"key": CONF_ROUND_TRIP_EFFICIENCY, "icon": "mdi:battery-sync", "default": None},
+        )
+
+    def _value_in_use(self):
+        return round(effective_round_trip_efficiency(self.controller)[0], 2)
 
 
 class SmartPredischargeSwitch(SwitchEntity):

@@ -39,7 +39,7 @@ def test_dual_plane_without_its_sensor_ignores_the_lifetime_counters():
     assert measured_battery_efficiency(battery) is None
 
 
-def ctrl(coordinators, configured=0.85):
+def ctrl(coordinators, configured=None):
     return SimpleNamespace(round_trip_efficiency=configured, coordinators=coordinators)
 
 

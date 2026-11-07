@@ -1444,6 +1444,9 @@
       "predictive_safety_margin_kwh_use_default": {
         "name": "Marge de Seguretat Previsió Solar: fer servir el valor per defecte"
       },
+      "round_trip_efficiency_use_measured": {
+        "name": "Eficiència de cicle complet: fer servir el valor mesurat"
+      },
       "max_price_threshold_enabled": {
         "name": "Preu màxim de càrrega manual"
       },

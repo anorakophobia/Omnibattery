@@ -26,6 +26,7 @@ EXPECTED = [
     ("max_price_threshold_enabled", "chargePrice"),
     ("max_price_threshold", "chargePrice"),
     ("min_arbitrage_margin", "chargePrice"),
+    ("round_trip_efficiency_use_measured", "chargePrice"),
     ("round_trip_efficiency", "chargePrice"),
     ("negative_price_charging", "chargePrice"),
     ("price_discharge_control", "dischargePrice"),
