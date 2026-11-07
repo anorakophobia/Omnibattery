@@ -150,6 +150,12 @@ DEFAULTS = {
     "temp_charge_limit_band_c": _unit(DEFAULT_TEMP_CHARGE_LIMIT_BAND_C, "°C"),
     "temp_charge_limit_floor_pct": _pct(DEFAULT_TEMP_CHARGE_LIMIT_FLOOR_PCT),
     "temp_charge_limit_discharge": "off",
+    # excluded devices (per device)
+    "excluded_device_enabled": "on",
+    "excluded_device_solar_surplus": "off",
+    "excluded_device_dynamic_power_control": "off",
+    "excluded_device_cover_home": "off",
+    "excluded_device_exclusion_pct": "100 %",
 }
 
 NO_DEFAULT = (
@@ -197,10 +203,7 @@ def test_every_setting_row_of_the_panel_is_covered():
     panel = PANEL.read_text(encoding="utf-8")
     block = panel[panel.index("const SYS_SECTIONS = [") : panel.index("const SYS_HELP = {")]
     keys = set(re.findall(r'\{ key: "(\w+)"', block))
-    statuses = set(NO_DEFAULT)
-    # per-device excluded-device rows get theirs with the excluded-device card
-    pending = {k for k in keys if k.startswith("excluded_device_")}
-    assert keys - set(DEFAULTS) - statuses - pending == set()
+    assert keys - set(DEFAULTS) - set(NO_DEFAULT) == set()
 
 
 @pytest.mark.parametrize("lang", LANGS)
