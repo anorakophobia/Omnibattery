@@ -1441,6 +1441,12 @@
       "min_soc_floor_enabled": {
         "name": "Gegarandeerd Minimum SOC"
       },
+      "predictive_safety_margin_kwh_use_default": {
+        "name": "Veiligheidsmarge Zonneprognose: standaardwaarde gebruiken"
+      },
+      "round_trip_efficiency_use_measured": {
+        "name": "Retourrendement: gemeten waarde gebruiken"
+      },
       "max_price_threshold_enabled": {
         "name": "Handmatig laadprijsplafond"
       },
@@ -1472,7 +1478,7 @@
         "name": "Temperatuurbegrenzing ontladen"
       },
       "weekly_full_charge_delay": {
-        "name": "Wekelijkse Volledige Lading Vertragen"
+        "name": "Wekelijkse volledige lading: wachten op laadvertraging"
       },
       "capacity_protection": {
         "name": "Piekbegrenzing"
@@ -1541,6 +1547,18 @@
       }
     },
     "sensor": {
+      "excluded_device_status": {
+        "name": "{device} – Status",
+        "state": {
+          "paused": "Gepauzeerd",
+          "unmeasured": "Geen vermogensmeting",
+          "idle": "Inactief",
+          "priority": "Voorrang (batterij wijkt)",
+          "solar_surplus": "Op zonne-overschot",
+          "excluded": "Uitgesloten van de batterij",
+          "covered": "Gedekt door de batterij"
+        }
+      },
       "discharge_window": {
         "name": "Ontlaadvenster",
         "state": {
@@ -2060,6 +2078,9 @@
       "surplus_price_hold_status": {
         "name": "Status prijsrem zonne-overschot"
       },
+      "temperature_charge_limit_status": {
+        "name": "Status temperatuurbegrenzing laden"
+      },
       "discharge_reserve_status": {
         "name": "Status ontlaadreserve"
       },
@@ -2331,13 +2352,13 @@
         "name": "Veiligheidsmarge Zonneprognose"
       },
       "negative_injection_threshold": {
-        "name": "Drempelwaarde negatieve teruglevering"
+        "name": "Drempel negatieve terugleverprijs"
       },
       "predischarge_reserve_soc": {
-        "name": "SOC-reserve voor voorontladen"
+        "name": "Laagste SOC bij voorontladen"
       },
       "predictive_min_soc_floor": {
-        "name": "Gegarandeerde minimale SOC"
+        "name": "Niveau gegarandeerde minimale SOC"
       },
       "battery_capacity": {
         "name": "Batterijcapaciteit"
@@ -2364,7 +2385,7 @@
         "name": "Max. Omvormervermogen"
       },
       "max_price_threshold": {
-        "name": "Maximale prijs (laden)"
+        "name": "Laadprijsplafond"
       },
       "discharge_price_threshold": {
         "name": "Ontlaad-prijsondergrens"
