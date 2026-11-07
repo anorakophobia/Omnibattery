@@ -34,14 +34,14 @@ Dynamic Pricing reads a future price calendar and buys the calculated energy def
 
 A visible calendar can be informational. When stored energy and expected solar already cover demand, `selected_hours` may still show useful cheap periods while `charging_needed` remains false. Reaching a grid-charge target also leaves solar-surplus charging available; it does not lock the battery out of later solar.
 
-The plan is rebuilt when new information changes the remaining horizon: before selected periods, late in the solar day, after a material SOC drop, after a material solar-forecast revision, when tomorrow’s prices arrive, when a relevant setting changes, or when an excluded large load changes how much forecast solar remains for the battery. Press **Re-evaluate Predictive Charging** to rebuild it immediately.
+The plan is rebuilt when new information changes the remaining horizon: before selected periods, late in the solar day, after a material SOC drop, after a material solar-forecast revision, when tomorrow’s prices arrive, when a setting it depends on changes, or when an excluded large load changes how much forecast solar remains for the battery. A setting changed on the predictive-charging card applies on the next control cycle by itself; press **Re-evaluate Predictive Charging** after a change outside Omnibattery, such as a corrected solar forecast or a new price source.
 
 Optional controls in the **Control** tab solve different problems:
 
 | Goal | Control | Result |
 |---|---|---|
 | Fill available battery space when import prices are negative | **Negative-price opportunistic charging** | Adds qualifying negative-price periods even without a normal energy deficit |
-| Keep battery energy while the current price is cheap | **Price-Based Discharge** | Blocks ordinary discharge until price exceeds its active threshold |
+| Keep battery energy while the current price is cheap | **Price-Based Discharge** | Blocks ordinary discharge until price exceeds its active threshold (discharge price floor, then charge price ceiling, then the daily average) |
 | Avoid losing solar when export is penalized | **Smart Pre-discharge / Anti-curtailment** | Creates battery space before forecast solar-risk periods |
 | Export solar now and absorb it later when feed-in value is lower | **Surplus Price Hold** | Pauses surplus charging outside selected low export-price periods |
 | Save stored energy for dearer household-demand periods | **Discharge Reserve** | Raises an economic discharge floor for future expensive demand |
@@ -55,8 +55,8 @@ Optional controls in the **Control** tab solve different problems:
 |---|---|---|
 | No schedule appears | Future prices are unavailable or the wrong provider entity was selected | `price_data_status`, provider integration, and price-sensor attributes |
 | Cheap periods appear but no charge starts | The calendar is informational, no deficit remains, or the per-period quota is already met | `charging_needed`, `slot_energy_targets_kwh`, and battery target SOC |
-| The cheapest period was skipped | It occurs after the energy deadline, exceeds the price ceiling, or fails the arbitrage margin | `energy_deadlines`, active price controls, and `total_shortfall_kwh` |
-| The schedule reports a shortfall | Eligible periods cannot supply enough energy before it is needed | Price ceiling, charging power, battery capacity, phase and contracted-power limits |
+| The cheapest period was skipped | It occurs after the energy deadline, exceeds the charge price ceiling, or fails the arbitrage margin | `energy_deadlines`, active price controls, and `total_shortfall_kwh` |
+| The schedule reports a shortfall | Eligible periods cannot supply enough energy before it is needed | Charge price ceiling, charging power, battery capacity, phase and contracted-power limits |
 | Tomorrow’s cheaper periods are missing | The provider has not published them or the active period is allowed to finish before replanning | Provider data and **Re-evaluate Predictive Charging** after publication |
 | A price feature is enabled but inactive | Its required forecast, profile, export price, battery capacity, or grid reading is unavailable | The feature’s status binary sensor and reason attribute |
 | Solar surplus exports unexpectedly | **Surplus Price Hold** selected a later, cheaper absorption period | **Surplus Price Hold Status** and its next release time |
@@ -91,7 +91,7 @@ Optional controls in the **Control** tab solve different problems:
 
     “Cheapest” means cheapest among periods that can meet the requirement in time. The projection caps stored energy at usable fleet capacity, so solar that cannot fit is not carried forward as phantom energy. A partial plan remains executable but records whether price filtering or physical period capacity caused the uncovered kWh.
 
-    Only today’s remaining solar enters the control horizon. Household demand after midnight is included through sunrise, when tomorrow’s production can begin. **Solar Forecast Safety Margin** is subtracted once from that forecast. New installations start at approximately 5% of configured fleet capacity; if capacity is unavailable during setup, the fallback is no margin. This is a live control rather than a setup-form field.
+    Only today’s remaining solar enters the control horizon. Household demand after midnight is included through sunrise, when tomorrow’s production can begin. **Solar Forecast Safety Margin** is subtracted once from that forecast. By default it is 5% of the fleet's capacity, including batteries that report their own capacity, and it follows the fleet while its **use default** switch is on; see [Predictive charging](index.md#solar-forecast-safety-margin). This is a live control rather than a setup-form field.
 
     If prices are missing at 00:05, evaluation is retried at 15-minute offsets during the first hour, for up to four retries. If Home Assistant starts after the daily evaluation and no plan exists, it rebuilds the remaining horizon after a 15-second startup delay.
 
@@ -105,11 +105,11 @@ Optional controls in the **Control** tab solve different problems:
     - **Solar forecast revision:** a change of at least 1.5 kWh in either direction rebuilds the plan, with a 30-minute cooldown and a maximum of four such rebuilds per day. Measured solar since the saved reading is removed before comparison, and an unavailable sensor is not treated as a collapsed forecast.
     - **Excluded-device solar claim:** a material change in an excluded load, such as an electric vehicle session, rebuilds the plan because that device changes how much forecast solar is available to the battery.
     - **Tomorrow’s prices:** newly published prices rebuild the remaining horizon once per day. If a selected charge period is running, this rebuild waits until it ends.
-    - **Relevant settings:** changes to battery minimum/maximum SOC, **Solar Forecast Safety Margin**, or **Guaranteed Minimum SOC** rebuild the plan on the next control cycle.
+    - **Relevant settings:** a change to battery minimum/maximum SOC, **Solar Forecast Safety Margin**, **Guaranteed Minimum SOC**, **Charge Price Ceiling** (or its manual switch), **Minimum Arbitrage Margin**, **Round-Trip Efficiency**, **Negative Feed-in Price Threshold**, **Pre-discharge Lowest SOC**, or the **Weekly Full Charge** day or switch rebuilds the plan on the next control cycle. Settings read every cycle, such as the discharge price floor and the minimum savings, need no rebuild.
 
     The daily references reset at midnight. Runtime protections, manual control, backup state, time-slot permissions, battery availability, and SOC limits remain authoritative during every rebuild.
 
-    **Re-evaluate Predictive Charging** rebuilds the remaining Dynamic Pricing horizon immediately. It does not create a multi-day plan: an afternoon rebuild covers the remaining period through the next sunrise, while the next normal daily plan is built at 00:05.
+    **Re-evaluate Predictive Charging** rebuilds the remaining Dynamic Pricing horizon immediately. It is not needed after a setting change on the predictive-charging card; use it after a change outside Omnibattery. It does not create a multi-day plan: an afternoon rebuild covers the remaining period through the next sunrise, while the next normal daily plan is built at 00:05.
 
     ### Negative-price opportunistic charging
 
@@ -127,15 +127,11 @@ Optional controls in the **Control** tab solve different problems:
 
     ### Smart Pre-discharge / Anti-curtailment
 
-    This opt-in feature does not control a solar inverter. It finds periods where import price is at or below **Negative Injection Threshold** and forecast solar surplus exceeds household consumption. Before the first risk period, it selects the most valuable eligible periods for pre-discharge until enough battery space exists, subject to SOC floors, reserves, power limits, and blockers.
+    This opt-in feature does not control a solar inverter. It finds periods where the feed-in price is at or below **Negative Feed-in Price Threshold** and forecast solar surplus exceeds household consumption. Before the first risk period, it selects the most valuable eligible periods for pre-discharge until enough battery space exists, subject to SOC floors, reserves, power limits, and blockers.
 
-    The default negative-injection threshold is 0 currency/kWh. **Pre-discharge Reserve SOC** adds a floor; its default is 20%, while a value of 0 uses the batteries’ existing floors. Risk periods are grouped into approximately one-hour blocks to reduce repeated switching.
+    **Negative Feed-in Price Threshold** defaults to 0.00 per kWh. **Pre-discharge Lowest SOC** adds a floor; it defaults to 20%, while a value of 0 uses the batteries’ existing floors. Both show on the card only while **Smart Pre-discharge** is on. Risk periods are grouped into approximately one-hour blocks to reduce repeated switching.
 
-    Export behavior can be **Self-consumption only**, **Automatic**, or **Custom limit**:
-
-    - **Self-consumption only** allows no deliberate grid export and is equivalent to 0 W.
-    - **Automatic** exports only the power needed to create the calculated space.
-    - **Custom limit** caps deliberate grid export at the configured W value; it does not cap total battery discharge used by the home.
+    Deliberate export uses the fleet’s own discharge power, capped by **System Power Limits** when they are on; there is no separate export-power setting.
 
     During a risk period, net grid target is clamped to zero so the battery can cover household consumption without deliberate export. Minimum and guaranteed-minimum SOC, operating time slots, manual control, backup state, unavailable batteries, and capacity protection still win. Missing prices, forecast, SOC, capacity, or grid data clears the override and blocker.
 
@@ -161,9 +157,11 @@ Optional controls in the **Control** tab solve different problems:
 
     **Price-Based Discharge** checks the current price every control cycle. If the price is above its threshold, normal PD discharge is allowed; at or below the threshold, discharge is blocked and controller state is frozen.
 
-    Dynamic Pricing uses **Max Price Threshold** when configured; otherwise it uses the daily average calculated over the current planning horizon. If neither exists, this blocker does not act. The maximum threshold also prevents grid charging at prices above it.
+    The threshold is the **Discharge Price Floor** while its manual switch is on; otherwise the **Charge Price Ceiling** while that manual switch is on; otherwise the daily average calculated over the current planning horizon. If none exists, this blocker does not act. The charge price ceiling also prevents grid charging at prices above it. On the card, the discharge price floor and its manual switch show only while **Price-Based Discharge** is on.
 
-    **Discharge Price Threshold** can open an idle price band. It must be at or above the charging ceiling:
+    A manual threshold has no value until you set one. Turning its manual switch on without a value stores today’s average price as a starting value, kept on the right side of the other threshold.
+
+    **Discharge Price Floor** can open an idle price band. It must be at or above the charge price ceiling:
 
     ```text
     price ≥ discharge threshold                   → discharge allowed
@@ -171,7 +169,7 @@ Optional controls in the **Control** tab solve different problems:
     price ≤ charge ceiling                        → discharge blocked; cheap grid charge may run
     ```
 
-    Leave the separate discharge threshold empty to use the maximum price threshold for both decisions. Solar-surplus charging remains available in the idle band. Operating time slots and price permission must both allow discharge; see [operating time slots](../time-slots.md).
+    Leave the discharge price floor's manual switch off to use the charge price ceiling for both decisions. Solar-surplus charging remains available in the idle band. Operating time slots and price permission must both allow discharge; see [operating time slots](../time-slots.md).
 
     ### Discharge Reserve
 
@@ -193,11 +191,11 @@ Optional controls in the **Control** tab solve different problems:
     expected_discharge_price × round_trip_efficiency − charge_price ≥ margin
     ```
 
-    The margin is disabled when empty or set to 0. It applies in addition to **Max Price Threshold**, and the stricter ceiling wins. It gates the 00:05 plan and every later rebuild, including the late-day assessment. Energy needed for **Guaranteed Minimum SOC** is the exception: only **Max Price Threshold** limits it.
+    The margin is off when set to 0, which is also how an unset margin shows. It applies in addition to **Charge Price Ceiling**, and the stricter ceiling wins. It gates the 00:05 plan and every later rebuild, including the late-day assessment. Energy needed for **Guaranteed Minimum SOC** is the exception: only **Charge Price Ceiling** limits it.
 
     `expected_discharge_price` is set per stored kWh, not for the whole deficit. The cheapest charge periods take the most expensive later periods, and each later period counts once. So the first kWh is compared with the evening peak, and the last with whatever cheaper hour it would replace. Energy the home needs at a given time is compared with the import price at that time. When importing then costs less than charging earlier with the round-trip losses, that energy is left to the grid and reported as `cheaper_to_import_kwh` instead of a shortfall. If no period qualifies, `chronological_plan_reason` is `price_threshold` and `cheapest_rejected_slot` shows the cheapest period with the ceiling it missed.
 
-    **Round-Trip Efficiency** represents marginal AC-to-AC energy efficiency; lower values require a larger gross spread. While it is left at the default 0.85, the integration uses the efficiency it measures on your batteries instead (capacity-weighted across the fleet), once a battery has enough history: at least 50 equivalent cycles with a lifetime ratio between 0.75 and 0.95, or, on Venus A/D, both charge and discharge legs sampled. Without a valid measurement it stays at 0.85. Any other value you set is always used as is. The value in use and its source are shown as `round_trip_efficiency_used` and `round_trip_efficiency_source` on the predictive-charging diagnostics.
+    **Round-Trip Efficiency** represents marginal AC-to-AC energy efficiency; lower values require a larger gross spread. While its **use measured** switch is on (the default), the integration uses the efficiency it measures on your batteries (capacity-weighted across the fleet), once a battery has enough history: at least 50 equivalent cycles with a lifetime ratio between 0.75 and 0.95, or, on Venus A/D, both charge and discharge legs sampled; the slider then shows that value, tagged *measured*. Without a valid measurement it uses 0.85. Turning the switch off, or moving the slider, sets a fixed value that is always used as is, 0.85 included. Installations that had 0.85 stored keep using the measured value. The value in use and its source are shown as `round_trip_efficiency_used` and `round_trip_efficiency_source` on the predictive-charging diagnostics.
 
     The same minimum margin applies to **High-Price Sale**, so the charge and sell decisions use one economic risk preference.
 
