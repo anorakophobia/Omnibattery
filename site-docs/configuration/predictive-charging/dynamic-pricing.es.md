@@ -35,14 +35,14 @@ Precio dinámico lee un calendario de precios futuros y compra el déficit energ
 
 Un calendario visible puede ser informativo. Cuando la energía almacenada y la solar prevista ya cubren la demanda, `selected_hours` puede seguir mostrando periodos baratos útiles mientras `charging_needed` permanece en falso. Alcanzar un objetivo de carga desde red también deja disponible la carga con excedente solar; no bloquea la batería frente a la solar posterior.
 
-El plan se reconstruye cuando nueva información cambia el horizonte restante: antes de periodos seleccionados, al final del día solar, tras una caída importante de SOC, tras una revisión importante de previsión solar, cuando llegan los precios de mañana, cuando cambia un ajuste relevante o cuando una carga grande excluida cambia cuánta solar prevista queda para la batería. Pulsa **Reevaluar carga predictiva** para reconstruirlo inmediatamente.
+El plan se reconstruye cuando nueva información cambia el horizonte restante: antes de periodos seleccionados, al final del día solar, tras una caída importante de SOC, tras una revisión importante de previsión solar, cuando llegan los precios de mañana, cuando cambia un ajuste del que depende o cuando una carga grande excluida cambia cuánta solar prevista queda para la batería. Un ajuste cambiado en la tarjeta de carga predictiva se aplica solo en el siguiente ciclo de control; pulsa **Reevaluar carga predictiva** tras un cambio fuera de Omnibattery, como una previsión solar corregida o una nueva fuente de precios.
 
 Los controles opcionales de la pestaña **Control** resuelven problemas distintos:
 
 | Objetivo | Control | Resultado |
 |---|---|---|
 | Llenar el espacio disponible de batería cuando los precios de importación son negativos | **Carga oportunista con precio negativo** | Añade periodos con precio negativo que cumplan la condición incluso sin un déficit energético normal |
-| Conservar energía de batería mientras el precio actual es barato | **Descarga basada en precio** | Bloquea la descarga ordinaria hasta que el precio supera su umbral activo |
+| Conservar energía de batería mientras el precio actual es barato | **Descarga basada en precio** | Bloquea la descarga ordinaria hasta que el precio supera su umbral activo (suelo de precio de descarga, después techo de precio de carga, después la media diaria) |
 | Evitar perder solar cuando se penaliza la exportación | **Predescarga inteligente / Antilimitación de producción** | Crea espacio de batería antes de periodos de riesgo solar previsto |
 | Exportar solar ahora y absorberla después cuando el valor de inyección es inferior | **Retención de excedente por precio** | Pausa la carga por excedente fuera de los periodos seleccionados de menor precio de exportación |
 | Guardar energía almacenada para periodos de demanda doméstica más caros | **Reserva de descarga** | Eleva un suelo económico de descarga para la futura demanda cara |
@@ -56,8 +56,8 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
 |---|---|---|
 | No aparece ningún horario | Los precios futuros no están disponibles o se eligió la entidad de proveedor incorrecta | `price_data_status`, integración del proveedor y atributos del sensor de precio |
 | Aparecen periodos baratos pero no empieza la carga | El calendario es informativo, no queda déficit o ya se cumplió la cuota por periodo | `charging_needed`, `slot_energy_targets_kwh` y SOC objetivo de batería |
-| Se omitió el periodo más barato | Ocurre después del plazo energético, supera el techo de precio o no cumple el margen de arbitraje | `energy_deadlines`, controles de precio activos y `total_shortfall_kwh` |
-| El horario informa de un déficit no cubierto | Los periodos elegibles no pueden suministrar suficiente energía antes de necesitarla | Techo de precio, potencia de carga, capacidad de batería y límites de fase y potencia contratada |
+| Se omitió el periodo más barato | Ocurre después del plazo energético, supera el techo de precio de carga o no cumple el margen de arbitraje | `energy_deadlines`, controles de precio activos y `total_shortfall_kwh` |
+| El horario informa de un déficit no cubierto | Los periodos elegibles no pueden suministrar suficiente energía antes de necesitarla | Techo de precio de carga, potencia de carga, capacidad de batería y límites de fase y potencia contratada |
 | Faltan periodos más baratos de mañana | El proveedor aún no los ha publicado o se permite que termine el periodo activo antes de replanificar | Datos del proveedor y **Reevaluar carga predictiva** tras su publicación |
 | Una función de precio está activada pero inactiva | No están disponibles su previsión, perfil, precio de exportación, capacidad de batería o lectura de red requeridos | Sensor binario de estado de la función y atributo de motivo |
 | El excedente solar se exporta inesperadamente | **Retención de excedente por precio** seleccionó un periodo posterior de absorción más barato | **Estado de retención de excedente por precio** y su próxima hora de liberación |
@@ -92,7 +92,7 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
 
     «Más barato» significa más barato entre los periodos que pueden cumplir el requisito a tiempo. La proyección limita la energía almacenada a la capacidad utilizable de la flota, por lo que la solar que no cabe no se arrastra como energía ficticia. Un plan parcial sigue siendo ejecutable, pero registra si el filtro de precio o la capacidad física de los periodos causó los kWh no cubiertos.
 
-    Solo la solar restante de hoy entra en el horizonte de control. La demanda doméstica posterior a medianoche se incluye hasta el amanecer, cuando puede empezar la producción de mañana. **Margen de seguridad de previsión solar** se resta una vez de esa previsión. Las instalaciones nuevas comienzan con aproximadamente el 5% de la capacidad de flota configurada; si la capacidad no está disponible durante la configuración, el método alternativo es no aplicar margen. Es un control en vivo, no un campo de formulario.
+    Solo la solar restante de hoy entra en el horizonte de control. La demanda doméstica posterior a medianoche se incluye hasta el amanecer, cuando puede empezar la producción de mañana. **Margen de seguridad de previsión solar** se resta una vez de esa previsión. Por defecto es el 5% de la capacidad de la flota, incluidas las baterías que comunican su propia capacidad, y sigue a la flota mientras su interruptor **valor por defecto** está activado; consulta [Carga predictiva](index.md#margen-de-seguridad-de-prevision-solar). Es un control en vivo, no un campo de formulario.
 
     Si faltan precios a las 00:05, la evaluación se reintenta a intervalos de 15 minutos durante la primera hora, hasta cuatro reintentos. Si Home Assistant arranca después de la evaluación diaria y no existe plan, reconstruye el horizonte restante tras un retraso de arranque de 15 segundos.
 
@@ -106,11 +106,11 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
     - **Revisión de previsión solar:** un cambio de al menos 1,5 kWh en cualquier dirección reconstruye el plan, con un periodo de espera de 30 minutos y un máximo de cuatro reconstrucciones al día. La solar medida desde la lectura guardada se elimina antes de comparar, y un sensor no disponible no se trata como una previsión desplomada.
     - **Reclamación solar de dispositivo excluido:** un cambio importante en una carga excluida, como una sesión de vehículo eléctrico, reconstruye el plan porque ese dispositivo cambia cuánta solar prevista queda para la batería.
     - **Precios de mañana:** los precios recién publicados reconstruyen el horizonte restante una vez al día. Si hay un periodo de carga seleccionado en curso, la reconstrucción espera hasta que termine.
-    - **Ajustes relevantes:** los cambios de SOC mínimo/máximo de batería, **Margen de seguridad de previsión solar** o **SOC mínimo garantizado** reconstruyen el plan en el siguiente ciclo de control.
+    - **Ajustes relevantes:** un cambio de SOC mínimo/máximo de batería, **Margen de seguridad de previsión solar**, **SOC mínimo garantizado**, **Techo de precio de carga** (o su interruptor manual), **Margen mínimo de arbitraje**, **Eficiencia de ciclo completo**, **Umbral de precio de inyección negativo**, **Predescarga: SOC más bajo**, o del día o el interruptor de **Carga semanal completa** reconstruye el plan en el siguiente ciclo de control. Los ajustes que se leen en cada ciclo, como el suelo de precio de descarga y los ahorros mínimos, no necesitan reconstrucción.
 
     Las referencias diarias se reinician a medianoche. Las protecciones en ejecución, control manual, estado de respaldo, permisos de franjas horarias, disponibilidad de batería y límites de SOC siguen siendo autoritativos durante cada reconstrucción.
 
-    **Reevaluar carga predictiva** reconstruye inmediatamente el horizonte restante de Precio dinámico. No crea un plan de varios días: una reconstrucción de tarde cubre el periodo restante hasta el próximo amanecer, mientras que el siguiente plan diario normal se construye a las 00:05.
+    **Reevaluar carga predictiva** reconstruye inmediatamente el horizonte restante de Precio dinámico. No hace falta tras cambiar un ajuste en la tarjeta de carga predictiva; úsalo tras un cambio fuera de Omnibattery. No crea un plan de varios días: una reconstrucción de tarde cubre el periodo restante hasta el próximo amanecer, mientras que el siguiente plan diario normal se construye a las 00:05.
 
     ### Carga oportunista con precio negativo
 
@@ -128,15 +128,11 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
 
     ### Predescarga inteligente / Antilimitación de producción
 
-    Esta función opcional no controla un inversor solar. Encuentra periodos donde el precio de importación es igual o inferior a **Umbral de inyección negativa** y el excedente solar previsto supera el consumo de la vivienda. Antes del primer periodo de riesgo, selecciona los periodos elegibles de mayor valor para predescargar hasta que exista suficiente espacio de batería, sujeto a suelos de SOC, reservas, límites de potencia y bloqueos.
+    Esta función opcional no controla un inversor solar. Encuentra periodos donde el precio de inyección es igual o inferior a **Umbral de precio de inyección negativo** y el excedente solar previsto supera el consumo de la vivienda. Antes del primer periodo de riesgo, selecciona los periodos elegibles de mayor valor para predescargar hasta que exista suficiente espacio de batería, sujeto a suelos de SOC, reservas, límites de potencia y bloqueos.
 
-    El umbral de inyección negativa predeterminado es 0 moneda/kWh. **SOC de reserva de predescarga** añade un suelo; su valor predeterminado es 20%, mientras que un valor de 0 usa los suelos existentes de las baterías. Los periodos de riesgo se agrupan en bloques de aproximadamente una hora para reducir cambios repetidos.
+    **Umbral de precio de inyección negativo** es por defecto 0,00 por kWh. **Predescarga: SOC más bajo** añade un suelo; por defecto es 20%, mientras que un valor de 0 usa los suelos existentes de las baterías. Ambos aparecen en la tarjeta solo mientras **Predescarga inteligente** está activada. Los periodos de riesgo se agrupan en bloques de aproximadamente una hora para reducir cambios repetidos.
 
-    El comportamiento de exportación puede ser **Solo autoconsumo**, **Automático** o **Límite personalizado**:
-
-    - **Solo autoconsumo** no permite exportación deliberada a red y equivale a 0 W.
-    - **Automático** exporta solo la potencia necesaria para crear el espacio calculado.
-    - **Límite personalizado** limita la exportación deliberada a red al valor configurado en W; no limita la descarga total de batería usada por la vivienda.
+    La exportación deliberada usa la potencia de descarga propia de la flota, limitada por **Límites de Potencia del Sistema** cuando están activados; no hay un ajuste de potencia de exportación aparte.
 
     Durante un periodo de riesgo, el objetivo neto de red se limita a cero para que la batería pueda cubrir el consumo de la vivienda sin exportación deliberada. Siguen prevaleciendo SOC mínimo y mínimo garantizado, franjas horarias de funcionamiento, control manual, estado de respaldo, baterías no disponibles y protección de capacidad. La falta de precios, previsión, SOC, capacidad o datos de red elimina la anulación y el bloqueo.
 
@@ -162,9 +158,11 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
 
     **Descarga basada en precio** comprueba el precio actual en cada ciclo de control. Si está por encima de su umbral, se permite la descarga PD normal; en o por debajo del umbral, la descarga se bloquea y se congela el estado del controlador.
 
-    Precio dinámico usa **Umbral máximo de precio** cuando está configurado; de lo contrario usa la media diaria calculada sobre el horizonte de planificación actual. Si no existe ninguno, este bloqueo no actúa. El umbral máximo también impide la carga desde red a precios superiores.
+    El umbral es el **Suelo de precio de descarga** mientras su interruptor manual está activado; si no, el **Techo de precio de carga** mientras ese interruptor manual está activado; si no, la media diaria calculada sobre el horizonte de planificación actual. Si no existe ninguno, este bloqueo no actúa. El techo de precio de carga también impide la carga desde red a precios superiores. En la tarjeta, el suelo de precio de descarga y su interruptor manual aparecen solo mientras **Descarga basada en precio** está activada.
 
-    **Umbral de precio de descarga** puede abrir una banda de precio inactiva. Debe estar en o por encima del techo de carga:
+    Un umbral manual no tiene valor hasta que estableces uno. Activar su interruptor manual sin valor guarda el precio medio de hoy como valor inicial, en el lado correcto del otro umbral.
+
+    **Suelo de precio de descarga** puede abrir una banda de precio inactiva. Debe estar en o por encima del techo de precio de carga:
 
     ```text
     price ≥ discharge threshold                   → discharge allowed
@@ -172,7 +170,7 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
     price ≤ charge ceiling                        → discharge blocked; cheap grid charge may run
     ```
 
-    Deja vacío el umbral de descarga separado para usar el umbral máximo de precio en ambas decisiones. La carga por excedente solar sigue disponible en la banda inactiva. Las franjas horarias de funcionamiento y el permiso de precio deben permitir ambos la descarga; consulta [franjas horarias de funcionamiento](../time-slots.md).
+    Deja desactivado el interruptor manual del suelo de precio de descarga para usar el techo de precio de carga en ambas decisiones. La carga por excedente solar sigue disponible en la banda inactiva. Las franjas horarias de funcionamiento y el permiso de precio deben permitir ambos la descarga; consulta [franjas horarias de funcionamiento](../time-slots.md).
 
     ### Reserva de descarga
 
@@ -194,11 +192,11 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
     expected_discharge_price × round_trip_efficiency − charge_price ≥ margin
     ```
 
-    El margen se desactiva cuando está vacío o se establece en 0. Se aplica además de **Umbral máximo de precio**, y prevalece el techo más estricto. Filtra el plan de las 00:05 y cada reconstrucción posterior, incluida la evaluación de final del día. La energía necesaria para **SOC mínimo garantizado** es la excepción: solo la limita **Umbral máximo de precio**.
+    El margen está desactivado con 0, que es también como se muestra un margen sin establecer. Se aplica además de **Techo de precio de carga**, y prevalece el techo más estricto. Filtra el plan de las 00:05 y cada reconstrucción posterior, incluida la evaluación de final del día. La energía necesaria para **SOC mínimo garantizado** es la excepción: solo la limita **Techo de precio de carga**.
 
     `expected_discharge_price` se calcula por kWh almacenado, no para todo el déficit. Los periodos de carga más baratos se emparejan con los periodos posteriores más caros, y cada periodo posterior cuenta una sola vez. Así, el primer kWh se compara con el pico de la tarde y el último con la hora más barata que sustituiría. La energía que la vivienda necesita en un momento dado se compara con el precio de importación en ese momento. Si importar entonces cuesta menos que cargar antes con las pérdidas del ciclo, esa energía se deja a la red y aparece como `cheaper_to_import_kwh` en lugar de como déficit. Si ningún periodo cumple, `chronological_plan_reason` vale `price_threshold` y `cheapest_rejected_slot` muestra el periodo más barato con el techo que no alcanzó.
 
-    **Eficiencia de ciclo completo** representa la eficiencia marginal de energía de CA a CA; valores inferiores requieren un diferencial bruto mayor. Mientras se deje en el valor por defecto 0,85, la integración usa la eficiencia que mide en tus baterías (media ponderada por capacidad), cuando una batería tiene historial suficiente: al menos 50 ciclos equivalentes con una relación vitalicia entre 0,75 y 0,95 o, en Venus A/D, ambos tramos de carga y descarga muestreados. Sin una medición válida se mantiene en 0,85. Cualquier otro valor que establezcas se usa tal cual. El valor en uso y su origen aparecen como `round_trip_efficiency_used` y `round_trip_efficiency_source` en el diagnóstico de carga predictiva.
+    **Eficiencia de ciclo completo** representa la eficiencia marginal de energía de CA a CA; valores inferiores requieren un diferencial bruto mayor. Mientras su interruptor **usar la medida** está activado (por defecto), la integración usa la eficiencia que mide en tus baterías (media ponderada por capacidad), cuando una batería tiene historial suficiente: al menos 50 ciclos equivalentes con una relación vitalicia entre 0,75 y 0,95 o, en Venus A/D, ambos tramos de carga y descarga muestreados; el control deslizante muestra entonces ese valor, con la etiqueta *medido*. Sin una medición válida usa 0,85. Desactivar el interruptor, o mover el control deslizante, fija un valor que se usa siempre tal cual, 0,85 incluido. Las instalaciones que tenían 0,85 guardado siguen usando el valor medido. El valor en uso y su origen aparecen como `round_trip_efficiency_used` y `round_trip_efficiency_source` en el diagnóstico de carga predictiva.
 
     El mismo margen mínimo se aplica a **Venta a precio alto**, de manera que las decisiones de compra y venta usan una sola preferencia de riesgo económico.
 
