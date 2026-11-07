@@ -9,6 +9,10 @@
 
 ## [1.6.1b1] - 2026-11-10
 
+### Added
+
+- **Solar Forecast Safety Margin: "use default" switch**: a slider can't be cleared, so once moved the margin stayed a fixed kWh value for good. The new switch beside it returns it to the default, 5 % of the fleet's capacity, which then follows batteries being added or removed. Off fixes the value in use; moving the slider sets a fixed value and turns it off. The panel tags the slider "default" while it follows. Thanks to @anorakophobia.
+
 ### Changed
 
 - **Time Slot: no charging and discharging inside the same window**: inside a configured window the battery now discharges only down to the energy needed after the window, and the grid covers the house for the rest of it. The window charges only what is needed after it, so energy is no longer bought in the window and spent in the same window, which lost the round trip on it. A window that needs no charge still lets the battery discharge its spare energy. Weekly full charge and Dynamic Pricing are unchanged.
