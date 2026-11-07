@@ -22,6 +22,7 @@ ADV_KEYS = {
     "discharge_price_threshold",
     "min_arbitrage_margin",
     "round_trip_efficiency",
+    "predictive_safety_margin_kwh_use_default",
     "predictive_safety_margin_kwh",
     "min_soc_floor_enabled",
     "predictive_min_soc_floor",
