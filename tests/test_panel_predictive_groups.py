@@ -72,7 +72,7 @@ def test_renderer_draws_a_divider_on_group_change():
     # hidden with Advanced off when the whole group it opens is advanced.
     assert "if (g && lastGrp && g !== lastGrp) {" in body
     assert 'sep.className = "sys-sep";' in body
-    assert 'rows.filter((x) => x.item.grp === g).every((x) => x.item.adv)) sep.classList.add("adv-row")' in body
+    assert 'rows.filter((x) => (x.grp ?? x.item.grp) === g).every((x) => x.item.adv)) sep.classList.add("adv-row")' in body
     assert "gatedNodes.push(sep);" in body
     assert ".sys-sep { grid-column: 1 / -1;" in panel
 
@@ -174,7 +174,7 @@ def test_the_weekly_delay_shows_only_with_charge_delay_on():
     card = panel[start : panel.index("],", start)]
     row = re.search(r'\{ key: "weekly_full_charge_delay",[^}]*\}', card).group(0)
     assert 'dep: "charge_delay"' in row
-    assert "const other = this._sysEntityId(dep);" in panel
+    assert "const other = d.grp == null ? this._sysEntityId(dep) : null;" in panel
     assert "store[DEP_REFRESH].push(refreshDeps);" in panel
     assert "for (const refresh of this[storeKey][DEP_REFRESH] || []) refresh();" in panel
 

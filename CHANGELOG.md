@@ -39,6 +39,7 @@
 - **Venus E v2/v3 max power sliders go down to 100 W** (#815). Thanks to @effevee.
 - **Integration Status price-hold states translated** (PR#825). Thanks to @syphernl.
 - **Panel: the manual charge price ceiling, discharge price floor and an unset arbitrage margin never appeared**: without a stored value their entities are "unknown", which the panel skipped as leftovers, so turning a manual switch on showed nothing, and the switch alone changed nothing either. The rows now render (as "—" until set), and turning manual on stores today's average price as a starting value, kept on the right side of the other threshold. The Minimum Arbitrage Margin had the same problem on installs that never set it; unset now reads as 0, which means the same (off). Thanks to @anorakophobia.
+- **Panel: the excluded devices card**: the Enabled switch's tooltip described a different setting (whether the home sensor includes the device); it now says what the switch does, pausing the device's handling. Each device's rows form one block, in a fixed order (Enabled, Solar surplus, its two options, Exclusion %) instead of alphabetically, with a divider between devices; the options show only while the device is enabled and Solar surplus is on, Exclusion % only for excluded devices (it does nothing for additional ones), and the Enabled row is tagged "excluded" or "additional". Tooltips state their defaults. Thanks to @anorakophobia.
 
 ## [1.6.0] - 2026-11-09
 
