@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Temperature Charge Limit Status**: a new status entity (and a row on the Temperature charge limit card) that is on while a battery is hot enough for its charge power to be throttled, with each battery's allowed power as a percentage of normal, its temperature and the hottest battery. Thanks to @anorakophobia.
 - **Solar Forecast Safety Margin: "use default" switch**: a slider can't be cleared, so once moved the margin stayed a fixed kWh value for good. The new switch beside it returns it to the default, 5 % of the fleet's capacity, which then follows batteries being added or removed. Off fixes the value in use; moving the slider sets a fixed value and turns it off. The panel tags the slider "default" while it follows. Thanks to @anorakophobia.
 - **Daily operation chart shows the grid price**: with Dynamic Pricing, each interval's tooltip lists its import price, and a stepped grey line draws the price over the day and after midnight, scaled to the visible range, with its high and low labelled at the right edge. The price comes from the configured price source, past intervals included. Thanks to @anorakophobia.
 - **Panel: type an exact value into any slider** (#783): tap the value next to a slider to enter a number (Enter or tap away to apply, Escape to cancel), so a precise setting like a +20 W grid target no longer depends on dragging. Thanks to @BHNDNL.
