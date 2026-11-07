@@ -1092,9 +1092,8 @@ class ChargeDischargeController:
             config_entry.data, CONF_DISCHARGE_PRICE_THRESHOLD, CONF_DISCHARGE_PRICE_THRESHOLD_ENABLED
         )
         self.min_arbitrage_margin = config_entry.data.get(CONF_MIN_ARBITRAGE_MARGIN, None)
-        self.round_trip_efficiency = config_entry.data.get(
-            CONF_ROUND_TRIP_EFFICIENCY, DEFAULT_ROUND_TRIP_EFFICIENCY
-        )
+        # None = measured (its "use measured" switch on); see effective_round_trip_efficiency.
+        self.round_trip_efficiency = config_entry.data.get(CONF_ROUND_TRIP_EFFICIENCY)
         self.smart_predischarge_enabled = config_entry.data.get(
             CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
         )
@@ -3350,9 +3349,7 @@ class ChargeDischargeController:
             self.config_entry.data, CONF_DISCHARGE_PRICE_THRESHOLD, CONF_DISCHARGE_PRICE_THRESHOLD_ENABLED
         )
         self.min_arbitrage_margin = self.config_entry.data.get(CONF_MIN_ARBITRAGE_MARGIN, None)
-        self.round_trip_efficiency = self.config_entry.data.get(
-            CONF_ROUND_TRIP_EFFICIENCY, DEFAULT_ROUND_TRIP_EFFICIENCY
-        )
+        self.round_trip_efficiency = self.config_entry.data.get(CONF_ROUND_TRIP_EFFICIENCY)
         self.smart_predischarge_enabled = self.config_entry.data.get(
             CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
         )
@@ -10957,8 +10954,12 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 that never enabled pre-discharge reach the new default.
     v15 -> v16: merge the two high-price switches into the high_price_sale
                 select; arbitrage-only folds into surplus + arbitrage.
+    v16 -> v17: a stored round-trip efficiency of exactly the default (0.85)
+                meant "use the measured value"; that is now the absent key (its
+                "use measured" switch), so the key is dropped and a stored 0.85
+                from then on is a fixed value.
     """
-    if entry.version >= 16:
+    if entry.version >= 17:
         return True
 
     new_data = dict(entry.data)
@@ -11347,11 +11348,19 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "(high-price switches merged into the high_price_sale select)",
         )
 
+    if entry.version < 17:
+        if new_data.get(CONF_ROUND_TRIP_EFFICIENCY) == DEFAULT_ROUND_TRIP_EFFICIENCY:
+            new_data.pop(CONF_ROUND_TRIP_EFFICIENCY)
+        _LOGGER.info(
+            "Omnibattery: migrated config entry to version 17 "
+            "(round-trip efficiency 0.85 now means the measured value only when unset)",
+        )
+
     hass.config_entries.async_update_entry(
         entry,
         title="Omnibattery",
         data=new_data,
-        version=16,
+        version=17,
     )
     return True
 
