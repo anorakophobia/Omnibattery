@@ -2335,7 +2335,7 @@
         "name": "Solar Forecast Safety Margin"
       },
       "predictive_min_soc_floor": {
-        "name": "Guaranteed Minimum SOC"
+        "name": "Guaranteed Minimum SOC Level"
       },
       "hourly_balance_target_net_wh": {
         "name": "Hourly Balance Target"
@@ -2365,10 +2365,10 @@
         "name": "Round-Trip Efficiency"
       },
       "negative_injection_threshold": {
-        "name": "Negative Injection Threshold"
+        "name": "Negative Feed-in Price Threshold"
       },
       "predischarge_reserve_soc": {
-        "name": "Pre-discharge Reserve SOC"
+        "name": "Pre-discharge Lowest SOC"
       }
     },
     "button": {
