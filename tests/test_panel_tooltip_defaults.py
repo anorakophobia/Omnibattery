@@ -15,6 +15,31 @@ from pathlib import Path
 import pytest
 
 from custom_components.omnibattery.const import (
+    DEFAULT_CAPACITY_PROTECTION_LIMIT,
+    DEFAULT_CAPACITY_PROTECTION_SOC,
+    DEFAULT_CHARGE_DELAY_BALANCE_DEADBAND_KWH,
+    DEFAULT_DELAY_SAFETY_MARGIN_MIN,
+    DEFAULT_DELAY_SOC_SETPOINT,
+    DEFAULT_HOURLY_BALANCE_DEADBAND_WH,
+    DEFAULT_HOURLY_BALANCE_HYSTERESIS_W,
+    DEFAULT_HOURLY_BALANCE_MAX_OFFSET_W,
+    DEFAULT_HOURLY_BALANCE_TARGET_NET_WH,
+    DEFAULT_NO_PD_COMMAND_DELAY,
+    DEFAULT_PD_DEADBAND,
+    DEFAULT_PD_DIRECTION_HYSTERESIS,
+    DEFAULT_PD_KD,
+    DEFAULT_PD_KP,
+    DEFAULT_PD_MAX_POWER_CHANGE,
+    DEFAULT_PD_MIN_CHARGE_POWER,
+    DEFAULT_PD_MIN_CYCLE_INTERVAL,
+    DEFAULT_PD_MIN_DISCHARGE_POWER,
+    DEFAULT_PD_RELAY_COOLDOWN,
+    DEFAULT_SYSTEM_MAX_CHARGE_POWER,
+    DEFAULT_SYSTEM_MAX_DISCHARGE_POWER,
+    DEFAULT_TARGET_GRID_POWER,
+    DEFAULT_TEMP_CHARGE_LIMIT_BAND_C,
+    DEFAULT_TEMP_CHARGE_LIMIT_C,
+    DEFAULT_TEMP_CHARGE_LIMIT_FLOOR_PCT,
     DEFAULT_DISCHARGE_RESERVE_MIN_SAVING,
     DEFAULT_NEGATIVE_INJECTION_THRESHOLD,
     DEFAULT_PREDICTIVE_MIN_SOC_FLOOR,
@@ -40,6 +65,11 @@ def _per_kwh(value):
 
 def _pct(value):
     return f"{value:g} %"
+
+
+def _unit(value, unit, off=False):
+    text = f"{value:g} {unit}".strip()
+    return f"{text} (off)" if off else text
 
 
 # key -> the English default sentence's value. Numbers come from the code.
@@ -72,6 +102,54 @@ DEFAULTS = {
     "weekly_full_charge_enabled": "off",
     "weekly_full_charge_day": "Sunday",
     "weekly_full_charge_delay": "off",
+    # main switches of the other cards
+    "manual_mode": "off",
+    "offgrid_mode": "off",
+    "no_pd_mode": "off",
+    "charge_delay": "off",
+    "hourly_balance": "off",
+    "system_power_limits": "off",
+    "capacity_protection": "off",
+    "temp_charge_limit": "off",
+    # control loop, three-phase, vacation, contracted power
+    "three_phase_protection": "off",
+    "vacation_mode": "off",
+    "pd_controller_deadband": _unit(DEFAULT_PD_DEADBAND, "W"),
+    "pd_min_charge_power": _unit(DEFAULT_PD_MIN_CHARGE_POWER, "W", off=True),
+    "pd_min_discharge_power": _unit(DEFAULT_PD_MIN_DISCHARGE_POWER, "W", off=True),
+    "pd_relay_cooldown": _unit(DEFAULT_PD_RELAY_COOLDOWN, "s", off=True),
+    "pd_target_grid_power": _unit(DEFAULT_TARGET_GRID_POWER, "W"),
+    "max_contracted_power": "7000 W",  # the number's own default (CONFIG_NUMBER_DEFINITIONS)
+    "pd_tuning_profile": "Balanced",  # untouched Kp/Kd/max change are the Balanced preset
+    "pd_controller_kp": _unit(DEFAULT_PD_KP, ""),
+    "pd_controller_kd": _unit(DEFAULT_PD_KD, ""),
+    "pd_controller_max_power_change": _unit(DEFAULT_PD_MAX_POWER_CHANGE, "W"),
+    "pd_controller_direction_hysteresis": _unit(DEFAULT_PD_DIRECTION_HYSTERESIS, "W"),
+    "pd_min_cycle_interval": _unit(DEFAULT_PD_MIN_CYCLE_INTERVAL, "s"),
+    "no_pd_command_delay": _unit(DEFAULT_NO_PD_COMMAND_DELAY, "s"),
+    "charge_priority": "automatic",
+    "primary_battery": "automatic",
+    "primary_feedforward": "off",
+    # charge delay
+    "delay_safety_margin_min": _unit(DEFAULT_DELAY_SAFETY_MARGIN_MIN / 60, "h"),
+    "charge_delay_balance_deadband_kwh": _unit(DEFAULT_CHARGE_DELAY_BALANCE_DEADBAND_KWH, "kWh"),
+    "delay_soc_setpoint_enabled": "off",
+    "delay_soc_setpoint": _pct(DEFAULT_DELAY_SOC_SETPOINT),
+    # hourly balance, system limits, peak shaving
+    "hourly_balance_target_net_wh": _unit(DEFAULT_HOURLY_BALANCE_TARGET_NET_WH, "kWh"),
+    "hourly_balance_max_offset_w": _unit(DEFAULT_HOURLY_BALANCE_MAX_OFFSET_W, "W"),
+    "hourly_balance_deadband_wh": _unit(DEFAULT_HOURLY_BALANCE_DEADBAND_WH, "kWh"),
+    "hourly_balance_hysteresis_w": _unit(DEFAULT_HOURLY_BALANCE_HYSTERESIS_W, "W"),
+    "system_max_charge_power": _unit(DEFAULT_SYSTEM_MAX_CHARGE_POWER, "W", off=True),
+    "system_max_discharge_power": _unit(DEFAULT_SYSTEM_MAX_DISCHARGE_POWER, "W", off=True),
+    "capacity_protection_excluded_devices": "off",
+    "capacity_protection_soc_threshold": _pct(DEFAULT_CAPACITY_PROTECTION_SOC),
+    "capacity_protection_limit": _unit(DEFAULT_CAPACITY_PROTECTION_LIMIT, "W"),
+    # temperature charge limit
+    "temp_charge_limit_c": _unit(DEFAULT_TEMP_CHARGE_LIMIT_C, "°C"),
+    "temp_charge_limit_band_c": _unit(DEFAULT_TEMP_CHARGE_LIMIT_BAND_C, "°C"),
+    "temp_charge_limit_floor_pct": _pct(DEFAULT_TEMP_CHARGE_LIMIT_FLOOR_PCT),
+    "temp_charge_limit_discharge": "off",
 }
 
 NO_DEFAULT = (
@@ -80,6 +158,7 @@ NO_DEFAULT = (
     "high_price_discharge_status",
     "discharge_reserve_status",
     "reevaluate_dynamic_pricing",
+    "system_pd_control_quality",
 )
 
 
@@ -109,6 +188,17 @@ def test_every_language_ends_with_one_default_sentence(lang):
         tail = text.rsplit(". ", 1)[-1]
         assert tail.startswith(LABEL[lang]), (lang, key, tail)
         assert text.count(LABEL[lang]) == 1, (lang, key)
+
+
+def test_every_setting_row_of_the_panel_is_covered():
+    # A new setting row must come with its default sentence (AGENTS.md).
+    panel = PANEL.read_text(encoding="utf-8")
+    block = panel[panel.index("const SYS_SECTIONS = [") : panel.index("const SYS_HELP = {")]
+    keys = set(re.findall(r'\{ key: "(\w+)"', block))
+    statuses = set(NO_DEFAULT)
+    # per-device excluded-device rows get theirs with the excluded-device card
+    pending = {k for k in keys if k.startswith("excluded_device_")}
+    assert keys - set(DEFAULTS) - statuses - pending == set()
 
 
 @pytest.mark.parametrize("lang", LANGS)
