@@ -1482,7 +1482,7 @@ def _preserve_values_in_error_forms(flow_class):
 class MarstekVenusConfigFlow(LegacyDomainMigrationMixin, ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Omnibattery."""
 
-    VERSION = 16
+    VERSION = 17
 
     def __init__(self):
         """Initialize the config flow."""

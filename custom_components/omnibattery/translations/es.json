@@ -1564,6 +1564,9 @@
       "predictive_safety_margin_kwh_use_default": {
         "name": "Margen de Seguridad Previsión Solar: usar valor por defecto"
       },
+      "round_trip_efficiency_use_measured": {
+        "name": "Eficiencia de ciclo completo: usar el valor medido"
+      },
       "max_price_threshold_enabled": {
         "name": "Precio máximo de carga manual"
       },

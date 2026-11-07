@@ -1549,6 +1549,9 @@
       "predictive_safety_margin_kwh_use_default": {
         "name": "Veiligheidsmarge Zonneprognose: standaardwaarde gebruiken"
       },
+      "round_trip_efficiency_use_measured": {
+        "name": "Retourrendement: gemeten waarde gebruiken"
+      },
       "max_price_threshold_enabled": {
         "name": "Handmatig laadprijsplafond"
       },

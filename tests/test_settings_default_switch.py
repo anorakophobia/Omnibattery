@@ -9,7 +9,6 @@ value, which reads as OFF. The panel shows a "default" tag on the slider.
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -77,12 +76,12 @@ def test_a_stored_value_reads_as_off():
     assert slider.extra_state_attributes == {"uses_default": False}
 
 
-def test_turning_it_on_drops_the_stored_value():
+async def test_turning_it_on_drops_the_stored_value():
     hass, entry, controller, switch, slider = _setup(
         {**FLEET, CONF_PREDICTIVE_SAFETY_MARGIN_KWH: 2.0}
     )
 
-    asyncio.run(switch.async_turn_on())
+    await switch.async_turn_on()
 
     assert CONF_PREDICTIVE_SAFETY_MARGIN_KWH not in entry.data
     assert switch.is_on
@@ -90,10 +89,10 @@ def test_turning_it_on_drops_the_stored_value():
     assert controller.reloads == 1
 
 
-def test_turning_it_off_fixes_the_value_in_use():
+async def test_turning_it_off_fixes_the_value_in_use():
     _hass, entry, controller, switch, slider = _setup(FLEET)
 
-    asyncio.run(switch.async_turn_off())
+    await switch.async_turn_off()
 
     assert entry.data[CONF_PREDICTIVE_SAFETY_MARGIN_KWH] == 0.66
     assert not switch.is_on
@@ -115,7 +114,7 @@ def test_the_panel_shows_the_switch_and_a_default_tag():
     slider_row = panel.index('key: "predictive_safety_margin_kwh", lk: "itemSolarSafety"')
     assert switch_row < slider_row
     assert "a.uses_default === true" in panel
-    assert 'this._t("tagDefault")' in panel
+    assert 'a.default_kind === "measured" ? "tagMeasured" : "tagDefault"' in panel
     # label, tag and help in every panel language
     assert panel.count("itemSolarSafetyDefault:") == 6
     assert panel.count("tagDefault:") == 6

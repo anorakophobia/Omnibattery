@@ -10,7 +10,6 @@ behind a `dep` switch as "—".
 """
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -49,58 +48,58 @@ def _switch(kind, data, average=0.4567):
     ("kind", "value_key"),
     [("charge", CONF_MAX_PRICE_THRESHOLD), ("discharge", CONF_DISCHARGE_PRICE_THRESHOLD)],
 )
-def test_turning_manual_on_stores_today_s_average(kind, value_key):
+async def test_turning_manual_on_stores_today_s_average(kind, value_key):
     switch, entry = _switch(kind, {})
 
-    asyncio.run(switch.async_turn_on())
+    await switch.async_turn_on()
 
     assert entry.data[value_key] == 0.457
     assert switch.is_on
 
 
-def test_a_stored_value_is_kept():
+async def test_a_stored_value_is_kept():
     switch, entry = _switch("charge", {CONF_MAX_PRICE_THRESHOLD: 0.30})
 
-    asyncio.run(switch.async_turn_on())
+    await switch.async_turn_on()
 
     assert entry.data[CONF_MAX_PRICE_THRESHOLD] == 0.30
 
 
-def test_the_charge_ceiling_starts_no_higher_than_an_active_floor():
+async def test_the_charge_ceiling_starts_no_higher_than_an_active_floor():
     switch, entry = _switch(
         "charge",
         {CONF_DISCHARGE_PRICE_THRESHOLD: 0.40, CONF_DISCHARGE_PRICE_THRESHOLD_ENABLED: True},
     )
 
-    asyncio.run(switch.async_turn_on())
+    await switch.async_turn_on()
 
     assert entry.data[CONF_MAX_PRICE_THRESHOLD] == 0.40
 
 
-def test_the_discharge_floor_starts_no_lower_than_an_active_ceiling():
+async def test_the_discharge_floor_starts_no_lower_than_an_active_ceiling():
     switch, entry = _switch(
         "discharge",
         {CONF_MAX_PRICE_THRESHOLD: 0.50, CONF_MAX_PRICE_THRESHOLD_ENABLED: True},
     )
 
-    asyncio.run(switch.async_turn_on())
+    await switch.async_turn_on()
 
     assert entry.data[CONF_DISCHARGE_PRICE_THRESHOLD] == 0.50
 
 
-def test_without_prices_the_value_stays_unset():
+async def test_without_prices_the_value_stays_unset():
     switch, entry = _switch("charge", {}, average=None)
 
-    asyncio.run(switch.async_turn_on())
+    await switch.async_turn_on()
 
     assert CONF_MAX_PRICE_THRESHOLD not in entry.data
     assert entry.data[CONF_MAX_PRICE_THRESHOLD_ENABLED] is True
 
 
-def test_turning_manual_off_keeps_the_value():
+async def test_turning_manual_off_keeps_the_value():
     switch, entry = _switch("charge", {CONF_MAX_PRICE_THRESHOLD: 0.30, CONF_MAX_PRICE_THRESHOLD_ENABLED: True})
 
-    asyncio.run(switch.async_turn_off())
+    await switch.async_turn_off()
 
     assert entry.data[CONF_MAX_PRICE_THRESHOLD] == 0.30
     assert not switch.is_on
