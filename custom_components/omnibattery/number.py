@@ -11,6 +11,7 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .energy import effective_round_trip_efficiency
 from .const import (
     CONFIG_NUMBER_DEFINITIONS,
     DYNAMIC_BOUNDS_SYSTEM_POWER,
@@ -612,12 +613,44 @@ class MarstekArbitrageNumber(NumberEntity):
     async def _handle_entry_update(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.async_write_ha_state()
 
+    def _controller(self):
+        return (
+            (getattr(self.hass, "data", None) or {}).get(DOMAIN, {})
+            .get(getattr(self.entry, "entry_id", None), {})
+            .get("controller")
+        )
+
     @property
     def native_value(self):
-        """Margin is None until set (gate disabled); efficiency falls back to the default."""
+        """Margin is None until set (gate disabled); efficiency is the value in use.
+
+        Without a stored efficiency (its "use measured" switch on) the slider
+        shows what the engine uses: the measured fleet value, or the default
+        while no battery has enough history.
+        """
         if self._kind == "margin":
             return self.entry.data.get(self._conf_key)
-        return self.entry.data.get(self._conf_key, DEFAULT_ROUND_TRIP_EFFICIENCY)
+        stored = self.entry.data.get(self._conf_key)
+        if stored is not None:
+            return stored
+        controller = self._controller()
+        if controller is None:
+            return DEFAULT_ROUND_TRIP_EFFICIENCY
+        return round(effective_round_trip_efficiency(controller)[0], 4)
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        """For the efficiency: whether it follows the measured value."""
+        if self._kind == "margin":
+            return None
+        uses_default = self._conf_key not in self.entry.data
+        controller = self._controller()
+        source = effective_round_trip_efficiency(controller)[1] if controller else "default"
+        return {
+            "uses_default": uses_default,
+            # "measured" tags the panel slider; "default" while there is no history.
+            "default_kind": source if uses_default else None,
+        }
 
     async def async_set_native_value(self, value: float) -> None:
         """Persist to config_entry.data; the controller re-reads on the update listener."""

@@ -1444,6 +1444,9 @@
       "predictive_safety_margin_kwh_use_default": {
         "name": "Sicherheitspuffer Solarprognose: Standardwert verwenden"
       },
+      "round_trip_efficiency_use_measured": {
+        "name": "Round-Trip-Wirkungsgrad: gemessenen Wert verwenden"
+      },
       "max_price_threshold_enabled": {
         "name": "Manuelle Lade-Preisobergrenze"
       },

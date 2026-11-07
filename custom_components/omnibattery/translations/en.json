@@ -1456,6 +1456,9 @@
       "predictive_safety_margin_kwh_use_default": {
         "name": "Solar Forecast Safety Margin: use default"
       },
+      "round_trip_efficiency_use_measured": {
+        "name": "Round-Trip Efficiency: use measured"
+      },
       "max_price_threshold_enabled": {
         "name": "Manual Charge Price Ceiling"
       },
