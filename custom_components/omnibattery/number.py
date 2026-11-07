@@ -664,14 +664,19 @@ class MarstekArbitrageNumber(NumberEntity):
 
     @property
     def native_value(self):
-        """Margin is None until set (gate disabled); efficiency is the value in use.
+        """The margin, 0 while unset (both mean off); the efficiency in use.
+
+        An unset margin used to be ``unknown``, which the panel drops as a
+        leftover, so the slider never appeared on installs that had not set
+        one. Every reader treats unset and 0 alike (``<= 0`` / ``or 0.0``).
 
         Without a stored efficiency (its "use measured" switch on) the slider
         shows what the engine uses: the measured fleet value, or the default
         while no battery has enough history.
         """
         if self._kind == "margin":
-            return self.entry.data.get(self._conf_key)
+            value = self.entry.data.get(self._conf_key)
+            return 0.0 if value is None else value
         stored = self.entry.data.get(self._conf_key)
         if stored is not None:
             return stored
