@@ -159,6 +159,8 @@ NO_DEFAULT = (
     "discharge_reserve_status",
     "reevaluate_dynamic_pricing",
     "system_pd_control_quality",
+    "predictive_charging_active",
+    "weekly_full_charge",
 )
 
 
