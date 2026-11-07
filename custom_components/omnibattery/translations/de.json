@@ -1478,7 +1478,7 @@
         "name": "Temperatur-Entladegrenze"
       },
       "weekly_full_charge_delay": {
-        "name": "Wöchentliche Vollladung verzögern"
+        "name": "Wöchentliche Vollladung: auf Ladeverzögerung warten"
       },
       "capacity_protection": {
         "name": "Spitzenlastkappung"
