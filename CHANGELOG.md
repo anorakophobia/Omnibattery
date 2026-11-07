@@ -9,6 +9,7 @@
 ### Changed
 
 - **Time Slot: no charging and discharging inside the same window**: inside a configured window the battery now discharges only down to the energy needed after the window, and the grid covers the house for the rest of it. The window charges only what is needed after it, so energy is no longer bought in the window and spent in the same window, which lost the round trip on it. A window that needs no charge still lets the battery discharge its spare energy. Weekly full charge and Dynamic Pricing are unchanged.
+- **Panel: the predictive charging card has one group per feature**: the solar safety margin, the SOC floor, the charge price and the discharge price each get their own group and divider, in the order buy, use, sell, solar surplus. The discharge price floor and its manual switch now sit with Discharge only above price, the only feature that reads them, and show only while it is on. Thanks to @anorakophobia.
 
 ### Fixed
 
