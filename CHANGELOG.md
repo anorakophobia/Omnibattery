@@ -10,7 +10,7 @@
 
 - **Time Slot: no charging and discharging inside the same window**: inside a configured window the battery discharges only down to the energy needed after the window, the grid covers the house for the rest of it, and the window charges at least what is needed after it, up to max_soc. Energy is no longer bought and spent in the same window. A window that needs no charge still lets the battery discharge its spare energy.
 - **Panel: shorter Daily operation card**: the subtitle is gone, the 15-min interval sits in the Real / Forecast chip and the legend keeps areas and lines on one row when they fit.
-- **Panel: the predictive charging card has one group per feature**: the solar safety margin, the SOC floor, the charge price and the discharge price each get their own group and divider, in the order buy, use, sell, solar surplus. The discharge price floor and its manual switch now sit with Discharge only above price, the only feature that reads them, and show only while it is on. Thanks to @anorakophobia.
+- **Panel: the predictive charging card has one group per feature**: the solar safety margin, the SOC floor, the charge price and the discharge price each get their own group and divider, in the order buy, use, sell, solar surplus. The discharge price floor and its manual switch now sit with Discharge only above price, the only feature that reads them, and show only while it is on. Every feature's settings (Guaranteed Minimum SOC, the two minimum savings, the smart pre-discharge threshold and reserve) likewise show only while the feature is on. Thanks to @anorakophobia.
 
 ### Fixed
 
