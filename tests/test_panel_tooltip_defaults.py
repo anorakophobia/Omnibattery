@@ -167,6 +167,7 @@ NO_DEFAULT = (
     "system_pd_control_quality",
     "predictive_charging_active",
     "weekly_full_charge",
+    "temperature_charge_limit_status",
 )
 
 
