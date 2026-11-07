@@ -2,6 +2,10 @@
 
 ## [1.6.1] - Unreleased
 
+### Added
+
+- **Solar Forecast Safety Margin: "use default" switch**: a slider can't be cleared, so once moved the margin stayed a fixed kWh value for good. The new switch beside it returns it to the default, 5 % of the fleet's capacity, which then follows batteries being added or removed. Off fixes the value in use; moving the slider sets a fixed value and turns it off. The panel tags the slider "default" while it follows. Thanks to @anorakophobia.
+
 ### Fixed
 
 - **Dynamic Pricing: tomorrow's planning horizon no longer drops for 30 min after a failed forecast fetch** (#817): an empty answer from the Energy dashboard solar forecast kept the previous periods and is retried after a minute, instead of collapsing the plan to the next sunrise. The new `planning_horizon_reason` attribute on the predictive charging sensor says why the horizon did or did not extend past the sunrise. Thanks to @Sjoedzj.
