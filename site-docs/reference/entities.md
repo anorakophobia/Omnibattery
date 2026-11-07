@@ -55,6 +55,8 @@ These entities belong to **Omnibattery System** rather than one battery.
     | `predictive_charging_active` | Predictive charging has been configured |
     | `curtailment_status`, `surplus_price_hold_status`, `discharge_reserve_status`, `high_price_discharge_status` | Relevant Dynamic Pricing feature available |
     | `capacity_protection_active` | Capacity protection configured |
+    | `temperature_charge_limit_status` (binary sensor) | Temperature charge limit configured |
+    | `excluded_device_status_<n>` | One per configured excluded device |
     | `weekly_full_charge` | Weekly full charge enabled |
     | `charge_delay_status` | Charge delay configured |
     | `system_alarm_status` | At least one battery exposes alarm registers |
@@ -78,6 +80,7 @@ These entities belong to **Omnibattery System** rather than one battery.
     - Always available controller choices: `manual_mode`, `no_pd_mode`, `three_phase_protection`, `weekly_full_charge_enabled`, `vacation_mode`
     - Conditional features: `offgrid_mode`, `primary_feedforward`, `system_power_limits`, `predictive_charging`, `predictive_charging_notifications`, `min_soc_floor_enabled`, `charge_delay`, `delay_soc_setpoint_enabled`, `weekly_full_charge_delay`, `temp_charge_limit`, `temp_charge_limit_discharge`, `capacity_protection`, `capacity_protection_excluded_devices`, `hourly_balance`
     - Pricing controls: `price_discharge_control`, `smart_predischarge`, `negative_price_charging`, `surplus_price_hold`, `discharge_reserve`
+    - Default and measured values: `predictive_safety_margin_kwh_use_default` (the safety margin follows the fleet default) and `round_trip_efficiency_use_measured` (the planner uses the measured efficiency), each next to its number
     - Generated controls: `time_slot` for each configured time slot; `excluded_device_enabled`, `excluded_device_solar_surplus`, `excluded_device_dynamic_power_control`, and `excluded_device_cover_home` for each applicable excluded device
     - External automation compatibility: `automation_charging_active`
 
