@@ -35,6 +35,7 @@
 - **Panel: missing price settings**: an unset Minimum Arbitrage Margin reads 0 and its slider shows; the minimum savings show the price currency; the manual charge ceiling / discharge floor rows render and get today's average price as a starting value. Thanks to @anorakophobia.
 - **Venus E v2/v3 max power sliders go down to 100 W** (#815). Thanks to @effevee.
 - **Integration Status price-hold states translated** (PR#825). Thanks to @syphernl.
+- **Panel: the manual charge price ceiling, discharge price floor and an unset arbitrage margin never appeared**: without a stored value their entities are "unknown", which the panel skipped as leftovers, so turning a manual switch on showed nothing, and the switch alone changed nothing either. The rows now render (as "—" until set), and turning manual on stores today's average price as a starting value, kept on the right side of the other threshold. The Minimum Arbitrage Margin had the same problem on installs that never set it; unset now reads as 0, which means the same (off). Thanks to @anorakophobia.
 
 ## [1.6.0] - 2026-11-09
 

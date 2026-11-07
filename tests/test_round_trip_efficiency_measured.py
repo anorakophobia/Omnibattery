@@ -145,3 +145,11 @@ def test_the_panel_shows_the_switch_and_a_measured_tag():
     assert panel.count("itemRoundTripMeasured:") == 6
     assert panel.count("tagMeasured:") == 6
     assert panel.count("round_trip_efficiency_use_measured:") == 6
+
+
+def test_an_unset_arbitrage_margin_reads_as_0_so_the_panel_shows_it():
+    # unknown would be dropped by the panel; 0 and unset both mean off
+    entry = SimpleNamespace(data={}, entry_id="entry")
+    assert MarstekArbitrageNumber(SimpleNamespace(data={}), entry, "margin").native_value == 0.0
+    entry.data = {"min_arbitrage_margin": 0.05}
+    assert MarstekArbitrageNumber(SimpleNamespace(data={}), entry, "margin").native_value == 0.05
