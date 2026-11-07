@@ -125,3 +125,41 @@ def test_a_feature_s_settings_show_only_while_it_is_on(setting, feature):
     row = re.search(rf'\{{ key: "{setting}",[^}}]*\}}', card).group(0)
     assert f'dep: "{feature}"' in row
     assert f'key: "{feature}", domain: "switch"' in card
+
+
+@pytest.mark.parametrize(
+    ("key", "lo", "hi"),
+    [
+        ("max_price_threshold", -0.5, 1.0),
+        ("discharge_price_threshold", -0.5, 1.0),
+        ("min_arbitrage_margin", 0, 0.3),
+        ("negative_injection_threshold", -0.5, 0.5),
+        ("surplus_hold_min_saving", 0, 0.2),
+        ("discharge_reserve_min_saving", 0, 0.2),
+    ],
+)
+def test_per_kwh_sliders_have_a_draggable_range(key, lo, hi):
+    # The entities span up to -2..2 in 0.001 steps (thousands of positions);
+    # the panel slider gets a narrow range, the typed value keeps the full one.
+    panel = PANEL.read_text(encoding="utf-8")
+    start = panel.index('tk: "diagPredictive"')
+    card = panel[start : panel.index('tk: "diagChargeDelay"', start)]
+    row = re.search(rf'\{{ key: "{key}",[^}}]*\}}', card).group(0)
+    assert f"range: [{lo}, {hi}, 0.005]" in row
+    assert "store[sk] = { type: \"number\", el: range, val: valEl, def: defEl, step, unit, range: item.range };" in panel
+    assert "const [lo, hi, sliderStep] = w.range;" in panel
+
+
+def test_status_rows_are_named_as_status():
+    panel = PANEL.read_text(encoding="utf-8")
+    start = panel.index('tk: "diagPredictive"')
+    card = panel[start : panel.index('tk: "diagChargeDelay"', start)]
+    for key, lk in (
+        ("surplus_price_hold_status", "statusSurplusHold"),
+        ("discharge_reserve_status", "statusDischargeReserve"),
+        ("curtailment_status", "statusPredischarge"),
+        ("high_price_discharge_status", "diagHighPriceDischarge"),
+    ):
+        row = re.search(rf'\{{ key: "{key}",[^}}]*\}}', card).group(0)
+        assert f'lk: "{lk}"' in row
+    assert panel.count("statusSurplusHold:") == 6
