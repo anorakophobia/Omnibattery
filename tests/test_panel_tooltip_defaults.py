@@ -68,6 +68,10 @@ DEFAULTS = {
     "smart_predischarge": "off",
     "negative_injection_threshold": _per_kwh(DEFAULT_NEGATIVE_INJECTION_THRESHOLD),
     "predischarge_reserve_soc": _pct(DEFAULT_PREDISCHARGE_RESERVE_SOC),
+    # weekly full charge card
+    "weekly_full_charge_enabled": "off",
+    "weekly_full_charge_day": "Sunday",
+    "weekly_full_charge_delay": "off",
 }
 
 NO_DEFAULT = (
