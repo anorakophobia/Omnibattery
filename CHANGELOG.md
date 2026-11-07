@@ -47,6 +47,7 @@
 - **Dynamic Pricing: the night charge no longer overfills a battery with a low discharge limit**: the projected drain per interval is capped at the fleet's discharge power and the load above it comes off the night charge, so an 800 W battery under a ~1.2 kW night load no longer reaches sunrise half full. Thanks to @pocketware.
 - **Real-Time Price and Discharge Reserve also respect the discharge power limit**: Real-Time Price nets the load above the fleet's discharge power from its charge, and the reserve no longer holds energy for load the battery could not deliver.
 - **Integration Status shows the two price-hold states in your language** (PR#825): "Surplus Exporting (Cheaper Window Ahead)" and "Holding Charge for Dearer Hours" were still English in the Catalan, Dutch, French, German and Spanish translations. A test now fails when an Integration Status state is left in English. Thanks to @syphernl.
+- **Panel: the manual charge price ceiling, discharge price floor and an unset arbitrage margin never appeared**: without a stored value their entities are "unknown", which the panel skipped as leftovers, so turning a manual switch on showed nothing, and the switch alone changed nothing either. The rows now render (as "—" until set), and turning manual on stores today's average price as a starting value, kept on the right side of the other threshold. The Minimum Arbitrage Margin had the same problem on installs that never set it; unset now reads as 0, which means the same (off). Thanks to @anorakophobia.
 
 ## [1.6.0] - 2026-11-09
 
