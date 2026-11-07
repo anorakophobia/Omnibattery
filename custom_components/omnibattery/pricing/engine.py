@@ -3461,6 +3461,11 @@ class PricingManager:
                         margin if value_deadlines else 0.0
                     ),
                     reserve_holds=value_deadlines and self._discharge_reserve_holds(),
+                    # A weekly full charge fills the gap to 100%; the load
+                    # the grid carries meanwhile does not shrink that gap.
+                    grid_carries_load_while_charging=not (
+                        callable(weekly_pending) and weekly_pending()
+                    ),
                 )
             )
             plan = evaluation.plan
@@ -4052,6 +4057,29 @@ class PricingManager:
                 price_ceiling=ceiling,
                 diagnostic_only=True,
                 slot_ceilings=slot_ceilings,
+            )
+        weekly_pending = getattr(self._controller, "_weekly_full_charge_pending", None)
+        if (
+            deficit_charging_needed
+            and chronological_plan is None
+            and not (callable(weekly_pending) and weekly_pending())
+        ):
+            # No consumption profile, so no plan trims the load the grid
+            # carries while the slots charge (#785). ponytail: the night load
+            # is taken as the daily average / 24; the profile replaces this.
+            planned = calculations.net_of_load_carried_by_grid(
+                float(decision_data.get("planned_grid_charge_kwh", deficit_kwh) or 0.0),
+                min(
+                    self._contracted_charge_ceiling(),
+                    max(0.0, float(self._controller.max_charge_capacity)),
+                ) / 1000.0,
+                float(decision_data.get("avg_consumption_kwh", 0.0) or 0.0) / 24.0,
+            )
+            decision_data["planned_grid_charge_kwh"] = planned
+            deficit_hours_needed = calculations.calculate_charging_hours_needed(
+                planned,
+                self._contracted_charge_ceiling(),
+                self._controller.max_charge_capacity,
             )
         if chronological_plan is not None:
             deficit_selected = [allocation.slot for allocation in chronological_plan.allocations]
