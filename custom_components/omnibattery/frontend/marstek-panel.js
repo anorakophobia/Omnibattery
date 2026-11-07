@@ -1164,38 +1164,41 @@ const SYS_SECTIONS = [
     tk: "diagPredictive",
     icon: "mdi:brain",
     items: [
-      // `grp` draws a divider whenever it changes between two live rows: base,
-      // charge pricing, then one group per discharge feature (switch + its
-      // sliders + its status readout), then the action button.
+      // One `grp` per feature (its switch, its settings, its status row); a
+      // divider is drawn whenever it changes between two live rows. Buying
+      // first (solar margin, SOC floor, charge price), then using, selling and
+      // the solar-surplus features, then the action button.
       { key: "predictive_charging", domain: "switch", lk: "itemEnable", icon: "mdi:brain", gate: true, grp: "base" },
       { key: "predictive_charging_notifications", domain: "switch", lk: "itemPredictiveNotifications", icon: "mdi:bell-ring-outline", grp: "base" },
-      { key: "predictive_safety_margin_kwh_use_default", domain: "switch", lk: "itemSolarSafetyDefault", icon: "mdi:solar-power-variant", adv: true, grp: "base" },
-      { key: "predictive_safety_margin_kwh", lk: "itemSolarSafety", icon: "mdi:solar-power-variant", adv: true, grp: "base" },
-      { key: "min_soc_floor_enabled", domain: "switch", lk: "itemMinSocFloorEnable", icon: "mdi:battery-arrow-up", adv: true, grp: "base" },
-      { key: "predictive_min_soc_floor", lk: "itemMinSocFloor", icon: "mdi:battery-arrow-up", adv: true, grp: "base" },
+      { key: "predictive_safety_margin_kwh_use_default", domain: "switch", lk: "itemSolarSafetyDefault", icon: "mdi:solar-power-variant", adv: true, grp: "solar" },
+      { key: "predictive_safety_margin_kwh", lk: "itemSolarSafety", icon: "mdi:solar-power-variant", adv: true, grp: "solar" },
+      { key: "min_soc_floor_enabled", domain: "switch", lk: "itemMinSocFloorEnable", icon: "mdi:battery-arrow-up", adv: true, grp: "floor" },
+      { key: "predictive_min_soc_floor", lk: "itemMinSocFloor", icon: "mdi:battery-arrow-up", adv: true, grp: "floor" },
       // Pricing controls: their entities only exist when the predictive mode is
       // price-based (price_discharge_control switch; thresholds are dynamic-pricing
       // only), so on time-slot installs these rows simply don't render.
-      { key: "price_discharge_control", domain: "switch", lk: "itemPriceDischarge", icon: "mdi:cash-clock", grp: "price" },
-      { key: "max_price_threshold_enabled", domain: "switch", lk: "itemMaxPriceManual", icon: "mdi:cash-plus", adv: true, grp: "price" },
-      { key: "max_price_threshold", lk: "itemMaxPrice", icon: "mdi:cash-plus", adv: true, grp: "price", dep: "max_price_threshold_enabled" },
-      { key: "discharge_price_threshold_enabled", domain: "switch", lk: "itemDischargePriceManual", icon: "mdi:cash-minus", adv: true, grp: "price" },
-      { key: "discharge_price_threshold", lk: "itemDischargePrice", icon: "mdi:cash-minus", adv: true, grp: "price", dep: "discharge_price_threshold_enabled" },
-      { key: "min_arbitrage_margin", lk: "itemArbitrageMargin", icon: "mdi:scale-balance", adv: true, grp: "price" },
-      { key: "round_trip_efficiency", lk: "itemRoundTripEfficiency", icon: "mdi:battery-sync", adv: true, grp: "price" },
-      { key: "negative_price_charging", domain: "switch", lk: "itemNegativePriceCharging", icon: "mdi:battery-charging-100", grp: "price" },
+      { key: "max_price_threshold_enabled", domain: "switch", lk: "itemMaxPriceManual", icon: "mdi:cash-plus", adv: true, grp: "chargePrice" },
+      { key: "max_price_threshold", lk: "itemMaxPrice", icon: "mdi:cash-plus", adv: true, grp: "chargePrice", dep: "max_price_threshold_enabled" },
+      { key: "min_arbitrage_margin", lk: "itemArbitrageMargin", icon: "mdi:scale-balance", adv: true, grp: "chargePrice" },
+      { key: "round_trip_efficiency", lk: "itemRoundTripEfficiency", icon: "mdi:battery-sync", adv: true, grp: "chargePrice" },
+      { key: "negative_price_charging", domain: "switch", lk: "itemNegativePriceCharging", icon: "mdi:battery-charging-100", grp: "chargePrice" },
+      // The discharge floor is read only by "Discharge only above price"; it and
+      // its manual switch show only while that feature is on (a `dep` chain).
+      { key: "price_discharge_control", domain: "switch", lk: "itemPriceDischarge", icon: "mdi:cash-clock", grp: "dischargePrice" },
+      { key: "discharge_price_threshold_enabled", domain: "switch", lk: "itemDischargePriceManual", icon: "mdi:cash-minus", adv: true, grp: "dischargePrice", dep: "price_discharge_control" },
+      { key: "discharge_price_threshold", lk: "itemDischargePrice", icon: "mdi:cash-minus", adv: true, grp: "dischargePrice", dep: "discharge_price_threshold_enabled" },
+      { key: "discharge_reserve", domain: "switch", lk: "diagDischargeReserve", icon: "mdi:battery-lock", grp: "reserve" },
+      { key: "discharge_reserve_min_saving", lk: "itemDischargeReserveSaving", icon: "mdi:cash-minus", adv: true, grp: "reserve" },
+      { key: "discharge_reserve_status", domain: "binary_sensor", lk: "diagDischargeReserve", icon: "mdi:battery-lock", grp: "reserve" },
+      { key: "high_price_sale", domain: "select", lk: "highPriceSale", icon: "mdi:transmission-tower-export", grp: "highPrice" },
+      { key: "high_price_discharge_status", domain: "sensor", lk: "diagHighPriceDischarge", icon: "mdi:transmission-tower-export", grp: "highPrice" },
+      { key: "surplus_price_hold", domain: "switch", lk: "diagSurplusHold", icon: "mdi:transmission-tower-export", grp: "surplus" },
+      { key: "surplus_hold_min_saving", lk: "itemSurplusHoldSaving", icon: "mdi:cash-minus", adv: true, grp: "surplus" },
+      { key: "surplus_price_hold_status", domain: "binary_sensor", lk: "diagSurplusHold", icon: "mdi:transmission-tower-export", grp: "surplus" },
       { key: "smart_predischarge", domain: "switch", lk: "itemSmartPredischarge", icon: "mdi:battery-arrow-down-outline", grp: "predischarge" },
       { key: "negative_injection_threshold", lk: "itemNegativeThreshold", icon: "mdi:cash-minus", adv: true, grp: "predischarge" },
       { key: "predischarge_reserve_soc", lk: "itemPredischargeReserve", icon: "mdi:battery-lock", adv: true, grp: "predischarge" },
       { key: "curtailment_status", domain: "binary_sensor", lk: "diagCurtailment", icon: "mdi:solar-power-variant", grp: "predischarge" },
-      { key: "surplus_price_hold", domain: "switch", lk: "diagSurplusHold", icon: "mdi:transmission-tower-export", grp: "surplus" },
-      { key: "surplus_hold_min_saving", lk: "itemSurplusHoldSaving", icon: "mdi:cash-minus", adv: true, grp: "surplus" },
-      { key: "surplus_price_hold_status", domain: "binary_sensor", lk: "diagSurplusHold", icon: "mdi:transmission-tower-export", grp: "surplus" },
-      { key: "high_price_sale", domain: "select", lk: "highPriceSale", icon: "mdi:transmission-tower-export", grp: "highPrice" },
-      { key: "high_price_discharge_status", domain: "sensor", lk: "diagHighPriceDischarge", icon: "mdi:transmission-tower-export", grp: "highPrice" },
-      { key: "discharge_reserve", domain: "switch", lk: "diagDischargeReserve", icon: "mdi:battery-lock", grp: "reserve" },
-      { key: "discharge_reserve_min_saving", lk: "itemDischargeReserveSaving", icon: "mdi:cash-minus", adv: true, grp: "reserve" },
-      { key: "discharge_reserve_status", domain: "binary_sensor", lk: "diagDischargeReserve", icon: "mdi:battery-lock", grp: "reserve" },
       // Dynamic pricing and time slot only; the system button does not exist on
       // real-time installs, so there this row simply doesn't render.
       { key: "reevaluate_dynamic_pricing", domain: "button", lk: "itemReevaluatePrices", icon: "mdi:calendar-refresh", grp: "action" },
@@ -6828,9 +6831,12 @@ class MarstekVenusPanel extends HTMLElement {
       // group it opens is advanced, so it can't linger alone with Advanced off.
       let lastGrp = null;
       // `dep: "<switch key>"` hides a row while that switch in the same card is
-      // OFF (e.g. a threshold behind its manual switch). It toggles the `sub-off`
-      // class rather than inline display, so it composes with the section gate.
-      const depNodes = {};
+      // OFF (e.g. a threshold behind its manual switch), and while any switch the
+      // parent row itself depends on is OFF, so a chain (discharge floor ->
+      // manual discharge price -> Discharge only above price) hides as a whole.
+      // It toggles the `sub-off` class rather than inline display, so it
+      // composes with the section gate.
+      const depRows = [];
       for (const r of rows) {
         const g = r.item.grp;
         if (g && lastGrp && g !== lastGrp) {
@@ -6844,7 +6850,7 @@ class MarstekVenusPanel extends HTMLElement {
         const frag = this._buildSysControl(r.item, r.id, store, r.multi);
         const nodes = [...frag.childNodes];
         if (r.item.adv) for (const n of nodes) n.classList?.add("adv-row");
-        if (r.item.dep) (depNodes[r.item.dep] ||= []).push(...nodes);
+        if (r.item.dep) depRows.push({ item: r.item, nodes });
         grid.appendChild(frag);
         if (r.item.gate) gateKey = this._sysStoreKey(r.item, r.id);
         else gatedNodes.push(...nodes);
@@ -6856,12 +6862,33 @@ class MarstekVenusPanel extends HTMLElement {
         const shown = w.invert ? !on : on;
         for (const n of gatedNodes) n.style.display = shown ? "" : "none";
       }
-      for (const r of rows) {
-        const w = depNodes[r.item.key] && store[this._sysStoreKey(r.item, r.id)];
-        if (!w) continue;
-        w.depNodes = depNodes[r.item.key];
-        const on = (this._hass.states[r.id] || {}).state === "on";
-        for (const n of w.depNodes) n.classList?.toggle("sub-off", !on);
+      if (depRows.length) {
+        const rowByKey = new Map(rows.map((r) => [r.item.key, r]));
+        // Every switch on the way up; a parent that is not rendered ends the
+        // chain (it cannot hide anything).
+        for (const d of depRows) {
+          d.ids = [];
+          const seen = new Set();
+          for (let dep = d.item.dep; dep && !seen.has(dep); ) {
+            seen.add(dep);
+            const parent = rowByKey.get(dep);
+            if (!parent) break;
+            d.ids.push(parent.id);
+            dep = parent.item.dep;
+          }
+        }
+        const refreshDeps = () => {
+          for (const d of depRows) {
+            const shown = d.ids.every((id) => (this._hass.states[id] || {}).state === "on");
+            for (const n of d.nodes) n.classList?.toggle("sub-off", !shown);
+          }
+        };
+        for (const r of rows) {
+          if (!depRows.some((d) => d.ids.includes(r.id))) continue;
+          const w = store[this._sysStoreKey(r.item, r.id)];
+          if (w) w.depRefresh = refreshDeps;
+        }
+        refreshDeps();
       }
       if (sec.tk === "secHourly") {
         const warn = this._hourlyWarnEl();
@@ -7377,7 +7404,8 @@ class MarstekVenusPanel extends HTMLElement {
       w.el.classList.toggle("on", shown);
       // gated feature switch: show/hide its sibling param rows when toggled
       if (w.gatedNodes) for (const n of w.gatedNodes) n.style.display = shown ? "" : "none";
-      if (w.depNodes) for (const n of w.depNodes) n.classList?.toggle("sub-off", !shown);
+      // a switch other rows depend on: re-check every chain in its card
+      if (w.depRefresh) w.depRefresh();
     } else if (w.type === "select") {
       const opts = Array.isArray(state.attributes.options) ? state.attributes.options : [];
       const sig = opts.join("|");
