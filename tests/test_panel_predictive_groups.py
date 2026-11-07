@@ -19,6 +19,7 @@ PANEL = Path("custom_components/omnibattery/frontend/marstek-panel.js")
 EXPECTED = [
     ("predictive_charging", "base"),
     ("predictive_charging_notifications", "base"),
+    ("predictive_charging_active", "base"),
     ("predictive_safety_margin_kwh_use_default", "solar"),
     ("predictive_safety_margin_kwh", "solar"),
     ("min_soc_floor_enabled", "floor"),
@@ -176,3 +177,13 @@ def test_the_weekly_delay_shows_only_with_charge_delay_on():
     assert "const other = this._sysEntityId(dep);" in panel
     assert "store[DEP_REFRESH].push(refreshDeps);" in panel
     assert "for (const refresh of this[storeKey][DEP_REFRESH] || []) refresh();" in panel
+
+
+def test_predictive_and_weekly_cards_show_their_status():
+    panel = PANEL.read_text(encoding="utf-8")
+    assert '{ key: "predictive_charging_active", domain: "binary_sensor", lk: "statusPredictive"' in panel
+    weekly = panel[panel.index('tk: "secWeeklyFull"') :]
+    weekly = weekly[: weekly.index("],")]
+    assert '{ key: "weekly_full_charge", domain: "sensor", lk: "statusWeekly"' in weekly
+    assert panel.count("statusPredictive:") == 6
+    assert panel.count("statusWeekly:") == 6
