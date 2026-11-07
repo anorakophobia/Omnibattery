@@ -28,6 +28,11 @@ When you add or change a user setting (a switch, number or select an end user se
 5. **Takes effect without a manual step:** if the setting feeds the predictive plan (which slots to buy, how much, the weekly full charge), add it to `predictive_balance_fingerprint()` so a change re-plans on the next cycle. A setting read live every cycle needs nothing.
 6. **Status:** a feature with its own switch shows its status row in its group, like the discharge reserve or the surplus price hold, labelled "<feature> status" (its own label key, not the feature's). A row whose entity has the attribute `applies: false` is not rendered.
 7. **Tests:** `tests/test_panel_tooltip_defaults.py` fails for a setting row without its default sentence: add the key and its default (from the constant) there, or to `NO_DEFAULT` for a status row or button. Update the other panel tests (`tests/test_panel_*.py`), and add one that a change re-plans when item 5 applies. Prefer `async def` tests over `asyncio.run()`, which runs Windows out of socket buffers in a full run.
-8. **User docs:** update the matching page in `site-docs/` in English and Spanish.
+8. **User docs:** update the matching page in `site-docs/` in English (`*.md`) and Spanish (`*.es.md`) in the same change, using the names the user sees (panel label and entity name).
+    - On a rename, search all of `site-docs/` for the old name, not just the feature's page; troubleshooting tables and the mode pages repeat setting names.
+    - State defaults the way the tooltip does, from the same constant.
+    - A new entity goes into `reference/entities.md` (and its `.es.md`).
+    - Check with `mkdocs build --strict` (`pip install -r requirements-docs.txt`); a changed heading changes its anchor, so check the links to it.
+    - Name in the PR any screenshot in `site-docs/assets/screenshots/` that no longer matches the panel.
 
 When you remove a setting, remove its row, label, tooltip, entity name and docs as well, and migrate stored values if needed.
