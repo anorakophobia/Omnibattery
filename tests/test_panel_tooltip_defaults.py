@@ -213,3 +213,15 @@ def test_status_rows_and_buttons_state_no_default(lang):
     entries = _help(lang)
     for key in NO_DEFAULT:
         assert LABEL[lang] not in entries[key], (lang, key)
+
+
+def test_a_settings_button_shows_its_tooltip():
+    # A button row has no label column, so the help has to reach the button
+    # itself: hover title, plus an info mark for touch.
+    panel = PANEL.read_text(encoding="utf-8")
+    start = panel.index("_buildSysControl(item, id, store, multi) {")
+    branch = panel[panel.index('if (domain === "button") {', start) : panel.index("return frag;", start)]
+    assert "this._help(item.key)" in branch
+    assert "btn.title = help" in branch
+    assert "_showInfoPopover(info, help)" in branch
+    assert _help("de")["reevaluate_dynamic_pricing"]
