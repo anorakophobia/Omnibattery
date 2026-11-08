@@ -140,7 +140,9 @@ def test_the_panel_shows_the_switch_and_a_measured_tag():
 
     switch_row = panel.index('key: "round_trip_efficiency_use_measured", domain: "switch"')
     slider_row = panel.index('key: "round_trip_efficiency", lk: "itemRoundTripEfficiency"')
-    assert switch_row < slider_row
+    # The value first, its default switch below it as a modifier: a switch
+    # above the slider reads as the feature's on/off.
+    assert slider_row < switch_row
     assert 'a.default_kind === "measured" ? "tagMeasured" : "tagDefault"' in panel
     assert panel.count("itemRoundTripMeasured:") == 6
     assert panel.count("tagMeasured:") == 6

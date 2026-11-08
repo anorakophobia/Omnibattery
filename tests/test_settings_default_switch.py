@@ -112,7 +112,9 @@ def test_the_panel_shows_the_switch_and_a_default_tag():
 
     switch_row = panel.index('key: "predictive_safety_margin_kwh_use_default", domain: "switch"')
     slider_row = panel.index('key: "predictive_safety_margin_kwh", lk: "itemSolarSafety"')
-    assert switch_row < slider_row
+    # The value first, its default switch below it as a modifier: a switch
+    # above the slider reads as the feature's on/off.
+    assert slider_row < switch_row
     assert "a.uses_default === true" in panel
     assert 'a.default_kind === "measured" ? "tagMeasured" : "tagDefault"' in panel
     # label, tag and help in every panel language
