@@ -72,4 +72,4 @@ El plan se adapta dentro de una ventana activa cuando el SOC cambia de forma imp
 
     El historial de consumo de la vivienda sigue cubriendo todo el día. La carga de batería en CA se elimina de la demanda derivada de la vivienda para que una ventana predictiva no enseñe al perfil que la propia batería es una carga doméstica recurrente.
 
-    **Margen de seguridad de previsión solar** se resta de la solar esperada. Para una instalación nueva su valor inicial es aproximadamente el 5% de la capacidad de flota configurada; si la capacidad se desconoce durante la configuración, se usa sin margen. El margen es una entidad de control en vivo, no un campo del formulario de configuración de este modo.
+    **Margen de seguridad de previsión solar** se resta de la solar esperada. Por defecto es el 5% de la capacidad de la flota y sigue a la flota mientras su interruptor **valor por defecto** está activado; consulta [Margen de seguridad de previsión solar](index.md#margen-de-seguridad-de-prevision-solar). El margen es una entidad de control en vivo, no un campo del formulario de configuración de este modo.
