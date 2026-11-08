@@ -482,7 +482,13 @@ class MarstekConfigNumberEntity(NumberEntity):
         self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}{definition['key']}"
         self.entity_id = system_entity_id("number", definition["key"])
         self._attr_icon = definition.get("icon")
-        self._attr_native_unit_of_measurement = definition.get("unit")
+        unit = definition.get("unit")
+        if unit == "/kWh":
+            # A price difference: in the price source's currency, like the
+            # arbitrage margin and the price thresholds.
+            is_chf = entry.data.get(CONF_PRICE_INTEGRATION_TYPE) == PRICE_INTEGRATION_CKW
+            unit = ("CHF" if is_chf else "€") + unit
+        self._attr_native_unit_of_measurement = unit
         # min/max are not set here: they are properties, so entries marked
         # dynamic_bounds can follow config_entry.data without a reload.
         self._attr_native_step = definition["step"]
