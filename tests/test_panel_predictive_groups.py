@@ -20,15 +20,15 @@ EXPECTED = [
     ("predictive_charging", "base"),
     ("predictive_charging_notifications", "base"),
     ("predictive_charging_active", "base"),
-    ("predictive_safety_margin_kwh_use_default", "solar"),
     ("predictive_safety_margin_kwh", "solar"),
+    ("predictive_safety_margin_kwh_use_default", "solar"),
     ("min_soc_floor_enabled", "floor"),
     ("predictive_min_soc_floor", "floor"),
     ("max_price_threshold_enabled", "chargePrice"),
     ("max_price_threshold", "chargePrice"),
     ("min_arbitrage_margin", "chargePrice"),
-    ("round_trip_efficiency_use_measured", "chargePrice"),
     ("round_trip_efficiency", "chargePrice"),
+    ("round_trip_efficiency_use_measured", "chargePrice"),
     ("negative_price_charging", "chargePrice"),
     ("price_discharge_control", "dischargePrice"),
     ("discharge_price_threshold_enabled", "dischargePrice"),
@@ -146,7 +146,7 @@ def test_per_kwh_sliders_have_a_draggable_range(key, lo, hi):
     start = panel.index('tk: "diagPredictive"')
     card = panel[start : panel.index('tk: "diagChargeDelay"', start)]
     row = re.search(rf'\{{ key: "{key}",[^}}]*\}}', card).group(0)
-    assert f"range: [{lo}, {hi}, 0.005]" in row
+    assert f"range: [{lo}, {hi}, 0.01]" in row
     assert "store[sk] = { type: \"number\", el: range, val: valEl, def: defEl, step, unit, range: item.range };" in panel
     assert "const [lo, hi, sliderStep] = w.range;" in panel
 

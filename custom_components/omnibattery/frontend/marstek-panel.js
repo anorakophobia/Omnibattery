@@ -1178,34 +1178,34 @@ const SYS_SECTIONS = [
       { key: "predictive_charging", domain: "switch", lk: "itemEnable", icon: "mdi:brain", gate: true, grp: "base" },
       { key: "predictive_charging_notifications", domain: "switch", lk: "itemPredictiveNotifications", icon: "mdi:bell-ring-outline", grp: "base" },
       { key: "predictive_charging_active", domain: "binary_sensor", lk: "statusPredictive", icon: "mdi:brain", grp: "base" },
-      { key: "predictive_safety_margin_kwh_use_default", domain: "switch", lk: "itemSolarSafetyDefault", icon: "mdi:solar-power-variant", adv: true, grp: "solar" },
       { key: "predictive_safety_margin_kwh", lk: "itemSolarSafety", icon: "mdi:solar-power-variant", adv: true, grp: "solar" },
+      { key: "predictive_safety_margin_kwh_use_default", domain: "switch", lk: "itemSolarSafetyDefault", icon: "mdi:solar-power-variant", adv: true, grp: "solar" },
       { key: "min_soc_floor_enabled", domain: "switch", lk: "itemMinSocFloorEnable", icon: "mdi:battery-arrow-up", adv: true, grp: "floor" },
       { key: "predictive_min_soc_floor", lk: "itemMinSocFloor", icon: "mdi:battery-arrow-up", adv: true, grp: "floor", dep: "min_soc_floor_enabled" },
       // Pricing controls: their entities only exist when the predictive mode is
       // price-based (price_discharge_control switch; thresholds are dynamic-pricing
       // only), so on time-slot installs these rows simply don't render.
       { key: "max_price_threshold_enabled", domain: "switch", lk: "itemMaxPriceManual", icon: "mdi:cash-plus", adv: true, grp: "chargePrice" },
-      { key: "max_price_threshold", lk: "itemMaxPrice", icon: "mdi:cash-plus", adv: true, grp: "chargePrice", dep: "max_price_threshold_enabled", range: [-0.5, 1.0, 0.005] },
-      { key: "min_arbitrage_margin", lk: "itemArbitrageMargin", icon: "mdi:scale-balance", adv: true, grp: "chargePrice", range: [0, 0.3, 0.005] },
-      { key: "round_trip_efficiency_use_measured", domain: "switch", lk: "itemRoundTripMeasured", icon: "mdi:battery-sync", adv: true, grp: "chargePrice" },
+      { key: "max_price_threshold", lk: "itemMaxPrice", icon: "mdi:cash-plus", adv: true, grp: "chargePrice", dep: "max_price_threshold_enabled", range: [-0.5, 1.0, 0.01] },
+      { key: "min_arbitrage_margin", lk: "itemArbitrageMargin", icon: "mdi:scale-balance", adv: true, grp: "chargePrice", range: [0, 0.3, 0.01] },
       { key: "round_trip_efficiency", lk: "itemRoundTripEfficiency", icon: "mdi:battery-sync", adv: true, grp: "chargePrice" },
+      { key: "round_trip_efficiency_use_measured", domain: "switch", lk: "itemRoundTripMeasured", icon: "mdi:battery-sync", adv: true, grp: "chargePrice" },
       { key: "negative_price_charging", domain: "switch", lk: "itemNegativePriceCharging", icon: "mdi:battery-charging-100", grp: "chargePrice" },
       // The discharge floor is read only by "Discharge only above price"; it and
       // its manual switch show only while that feature is on (a `dep` chain).
       { key: "price_discharge_control", domain: "switch", lk: "itemPriceDischarge", icon: "mdi:cash-clock", grp: "dischargePrice" },
       { key: "discharge_price_threshold_enabled", domain: "switch", lk: "itemDischargePriceManual", icon: "mdi:cash-minus", adv: true, grp: "dischargePrice", dep: "price_discharge_control" },
-      { key: "discharge_price_threshold", lk: "itemDischargePrice", icon: "mdi:cash-minus", adv: true, grp: "dischargePrice", dep: "discharge_price_threshold_enabled", range: [-0.5, 1.0, 0.005] },
+      { key: "discharge_price_threshold", lk: "itemDischargePrice", icon: "mdi:cash-minus", adv: true, grp: "dischargePrice", dep: "discharge_price_threshold_enabled", range: [-0.5, 1.0, 0.01] },
       { key: "discharge_reserve", domain: "switch", lk: "diagDischargeReserve", icon: "mdi:battery-lock", grp: "reserve" },
-      { key: "discharge_reserve_min_saving", lk: "itemDischargeReserveSaving", icon: "mdi:cash-minus", adv: true, grp: "reserve", dep: "discharge_reserve", range: [0, 0.2, 0.005] },
+      { key: "discharge_reserve_min_saving", lk: "itemDischargeReserveSaving", icon: "mdi:cash-minus", adv: true, grp: "reserve", dep: "discharge_reserve", range: [0, 0.2, 0.01] },
       { key: "discharge_reserve_status", domain: "binary_sensor", lk: "statusDischargeReserve", icon: "mdi:battery-lock", grp: "reserve" },
       { key: "high_price_sale", domain: "select", lk: "highPriceSale", icon: "mdi:transmission-tower-export", grp: "highPrice" },
       { key: "high_price_discharge_status", domain: "sensor", lk: "diagHighPriceDischarge", icon: "mdi:transmission-tower-export", grp: "highPrice" },
       { key: "surplus_price_hold", domain: "switch", lk: "diagSurplusHold", icon: "mdi:transmission-tower-export", grp: "surplus" },
-      { key: "surplus_hold_min_saving", lk: "itemSurplusHoldSaving", icon: "mdi:cash-minus", adv: true, grp: "surplus", dep: "surplus_price_hold", range: [0, 0.2, 0.005] },
+      { key: "surplus_hold_min_saving", lk: "itemSurplusHoldSaving", icon: "mdi:cash-minus", adv: true, grp: "surplus", dep: "surplus_price_hold", range: [0, 0.2, 0.01] },
       { key: "surplus_price_hold_status", domain: "binary_sensor", lk: "statusSurplusHold", icon: "mdi:transmission-tower-export", grp: "surplus" },
       { key: "smart_predischarge", domain: "switch", lk: "itemSmartPredischarge", icon: "mdi:battery-arrow-down-outline", grp: "predischarge" },
-      { key: "negative_injection_threshold", lk: "itemNegativeThreshold", icon: "mdi:cash-minus", adv: true, grp: "predischarge", dep: "smart_predischarge", range: [-0.5, 0.5, 0.005] },
+      { key: "negative_injection_threshold", lk: "itemNegativeThreshold", icon: "mdi:cash-minus", adv: true, grp: "predischarge", dep: "smart_predischarge", range: [-0.5, 0.5, 0.01] },
       { key: "predischarge_reserve_soc", lk: "itemPredischargeReserve", icon: "mdi:battery-lock", adv: true, grp: "predischarge", dep: "smart_predischarge" },
       { key: "curtailment_status", domain: "binary_sensor", lk: "statusPredischarge", icon: "mdi:solar-power-variant", grp: "predischarge" },
       // Dynamic pricing and time slot only; the system button does not exist on
@@ -1405,7 +1405,7 @@ const SYS_HELP = {
     max_price_threshold: "Charge ceiling for dynamic pricing: the battery only grid-charges when the price is at or below this. Only applies while its manual switch is on; turning that on without a value starts from today's average price. Must stay ≤ the discharge price floor. Default: not set (automatic).",
     discharge_price_threshold: "Discharge floor for dynamic pricing: with Discharge only above price on, the battery only discharges when the price is at or above this. Only applies while its manual switch is on; turning that on without a value starts from today's average price. Must stay ≥ the charge price ceiling. Default: not set (automatic).",
     min_arbitrage_margin: "Minimum profit per kWh required before grid charging. 0 = off, and the charge ceiling alone decides. When set, the ceiling follows the day's spread: charging is skipped when the expensive hours are not far enough above the cheap ones to repay conversion losses. The same margin works the other way round: with High-Price Sale on, a sale must beat the later buy-back price by at least this much. Default: not set (off).",
-    round_trip_efficiency_use_measured: "On: the efficiency is the one measured on your batteries (a battery counts once it has 50 full cycles; 0.85 until one has) and follows it. Off: the value below is fixed. Moving the slider sets a fixed value and turns this off; turning it on again discards that value. Default: on.",
+    round_trip_efficiency_use_measured: "On: the efficiency is the one measured on your batteries (a battery counts once it has 50 full cycles; 0.85 until one has) and follows it. Off: the slider's value is fixed. Moving the slider sets a fixed value and turns this off; turning it on again discards that value. Default: on.",
     round_trip_efficiency: "Battery round-trip efficiency (kWh out / kWh in), used to value stored energy for the arbitrage margin and High-Price Sale. Lower values make the check stricter. With “use measured” on it shows the value measured on your batteries. Default: measured (0.85 until a battery has 50 cycles).",
   },
   es: {
@@ -1508,7 +1508,7 @@ const SYS_HELP = {
     max_price_threshold: "Techo de carga para precios dinámicos: la batería solo carga de red cuando el precio está en o por debajo de este valor. Solo se aplica con su interruptor manual activado; al activarlo sin valor parte del precio medio de hoy. Debe mantenerse ≤ el suelo de precio de descarga. Por defecto: sin definir (automático).",
     discharge_price_threshold: "Suelo de descarga para precios dinámicos: con Descargar solo si precio alto activado, la batería solo descarga cuando el precio está en o por encima de este valor. Solo se aplica con su interruptor manual activado; al activarlo sin valor parte del precio medio de hoy. Debe mantenerse ≥ el techo de precio de carga. Por defecto: sin definir (automático).",
     min_arbitrage_margin: "Beneficio mínimo por kWh exigido antes de cargar de red. 0 = desactivado, y decide solo el techo de carga. Si se define, el techo sigue el diferencial del día: no se carga cuando las horas caras no superan lo suficiente a las baratas para compensar las pérdidas de conversión. El mismo margen actúa en sentido contrario: con la venta a precio alto activa, una venta debe superar el precio de recompra posterior al menos en esta cantidad. Por defecto: sin definir (desactivado).",
-    round_trip_efficiency_use_measured: "Activado: la eficiencia es la medida en tus baterías (una batería cuenta cuando tiene 50 ciclos completos; 0,85 hasta entonces) y la sigue. Desactivado: el valor de abajo es fijo. Mover el control fija un valor y lo desactiva; al volver a activarlo ese valor se descarta. Por defecto: activado.",
+    round_trip_efficiency_use_measured: "Activado: la eficiencia es la medida en tus baterías (una batería cuenta cuando tiene 50 ciclos completos; 0,85 hasta entonces) y la sigue. Desactivado: el valor del control es fijo. Mover el control fija un valor y lo desactiva; al volver a activarlo ese valor se descarta. Por defecto: activado.",
     round_trip_efficiency: "Eficiencia de ciclo completo de la batería (kWh de salida / kWh de entrada), usada para valorar la energía almacenada en el margen de arbitraje y la venta a precio alto. Valores más bajos endurecen el filtro. Con «usar la medida» activado muestra el valor medido en tus baterías. Por defecto: medida (0,85 hasta que una batería tenga 50 ciclos).",
   },
   ca: {
@@ -1611,7 +1611,7 @@ const SYS_HELP = {
     max_price_threshold: "Sostre de càrrega per a preus dinàmics: la bateria només carrega de xarxa quan el preu està en o per sota d'aquest valor. Només s'aplica amb el seu interruptor manual activat; en activar-lo sense valor parteix del preu mitjà d'avui. S'ha de mantenir ≤ el terra de preu de descàrrega. Per defecte: sense definir (automàtic).",
     discharge_price_threshold: "Terra de descàrrega per a preus dinàmics: amb Descarregar només si preu alt activat, la bateria només descarrega quan el preu està en o per sobre d'aquest valor. Només s'aplica amb el seu interruptor manual activat; en activar-lo sense valor parteix del preu mitjà d'avui. S'ha de mantenir ≥ el sostre de preu de càrrega. Per defecte: sense definir (automàtic).",
     min_arbitrage_margin: "Benefici mínim per kWh exigit abans de carregar de xarxa. 0 = desactivat, i decideix només el sostre de càrrega. Si es defineix, el sostre segueix el diferencial del dia: no es carrega quan les hores cares no superen prou les barates per compensar les pèrdues de conversió. El mateix marge actua en sentit contrari: amb la venda a preu alt activa, una venda ha de superar el preu de recompra posterior com a mínim en aquesta quantitat. Per defecte: sense definir (desactivat).",
-    round_trip_efficiency_use_measured: "Activat: l'eficiència és la mesurada a les teves bateries (una bateria compta quan té 50 cicles complets; 0,85 fins aleshores) i la segueix. Desactivat: el valor de sota és fix. Moure el control fixa un valor i el desactiva; en tornar-lo a activar aquest valor es descarta. Per defecte: activat.",
+    round_trip_efficiency_use_measured: "Activat: l'eficiència és la mesurada a les teves bateries (una bateria compta quan té 50 cicles complets; 0,85 fins aleshores) i la segueix. Desactivat: el valor del control és fix. Moure el control fixa un valor i el desactiva; en tornar-lo a activar aquest valor es descarta. Per defecte: activat.",
     round_trip_efficiency: "Eficiència de cicle complet de la bateria (kWh de sortida / kWh d'entrada), usada per valorar l'energia emmagatzemada al marge d'arbitratge i a la venda a preu alt. Valors més baixos endureixen el filtre. Amb «fer servir la mesurada» activat mostra el valor mesurat a les teves bateries. Per defecte: mesurada (0,85 fins que una bateria tingui 50 cicles).",
   },
   de: {
@@ -1714,7 +1714,7 @@ const SYS_HELP = {
     max_price_threshold: "Lade-Obergrenze für dynamische Preise: die Batterie lädt nur aus dem Netz, wenn der Preis auf oder unter diesem Wert liegt. Gilt nur, solange der manuelle Schalter an ist; wird er ohne Wert eingeschaltet, startet er beim heutigen Durchschnittspreis. Muss ≤ der Entlade-Preisuntergrenze bleiben. Standard: nicht gesetzt (automatisch).",
     discharge_price_threshold: "Entlade-Untergrenze für dynamische Preise: mit Nur über Preis entladen an entlädt die Batterie nur, wenn der Preis auf oder über diesem Wert liegt. Gilt nur, solange der manuelle Schalter an ist; wird er ohne Wert eingeschaltet, startet er beim heutigen Durchschnittspreis. Muss ≥ der Lade-Preisobergrenze bleiben. Standard: nicht gesetzt (automatisch).",
     min_arbitrage_margin: "Mindestgewinn pro kWh, der vor dem Netzladen erforderlich ist. 0 = aus, dann entscheidet allein die Lade-Obergrenze. Wenn gesetzt, folgt die Obergrenze der Tagesspreizung: es wird nicht geladen, wenn die teuren Stunden nicht weit genug über den günstigen liegen, um die Umwandlungsverluste zu decken. Dieselbe Marge gilt in der Gegenrichtung: Mit Verkauf bei Hochpreis an muss ein Verkauf den späteren Rückkaufpreis um mindestens diesen Betrag übertreffen. Standard: nicht gesetzt (aus).",
-    round_trip_efficiency_use_measured: "Ein: der Wirkungsgrad ist der an deinen Batterien gemessene (eine Batterie zählt ab 50 Vollzyklen; bis dahin 0,85) und folgt ihm. Aus: der Wert darunter ist fest. Den Regler zu bewegen setzt einen festen Wert und schaltet dies aus; beim erneuten Einschalten wird dieser Wert verworfen. Standard: ein.",
+    round_trip_efficiency_use_measured: "Ein: der Wirkungsgrad ist der an deinen Batterien gemessene (eine Batterie zählt ab 50 Vollzyklen; bis dahin 0,85) und folgt ihm. Aus: der Wert des Reglers ist fest. Den Regler zu bewegen setzt einen festen Wert und schaltet dies aus; beim erneuten Einschalten wird dieser Wert verworfen. Standard: ein.",
     round_trip_efficiency: "Round-Trip-Wirkungsgrad der Batterie (kWh raus / kWh rein), mit dem gespeicherte Energie für die Arbitragemarge und den Verkauf bei Hochpreis bewertet wird. Niedrigere Werte machen die Prüfung strenger. Mit „gemessenen verwenden“ an zeigt er den an deinen Batterien gemessenen Wert. Standard: gemessen (0,85, bis eine Batterie 50 Zyklen hat).",
   },
   fr: {
@@ -1817,7 +1817,7 @@ const SYS_HELP = {
     max_price_threshold: "Plafond de charge pour la tarification dynamique : la batterie ne charge depuis le réseau que si le prix est à ce niveau ou en dessous. S'applique uniquement si son interrupteur manuel est activé ; l'activer sans valeur part du prix moyen du jour. Doit rester ≤ au plancher de prix de décharge. Par défaut : non défini (automatique).",
     discharge_price_threshold: "Plancher de décharge pour la tarification dynamique : avec Décharger si prix élevé activé, la batterie ne décharge que si le prix est à ce niveau ou au-dessus. S'applique uniquement si son interrupteur manuel est activé ; l'activer sans valeur part du prix moyen du jour. Doit rester ≥ au plafond de prix de charge. Par défaut : non défini (automatique).",
     min_arbitrage_margin: "Profit minimal par kWh exigé avant la charge réseau. 0 = désactivé, et seul le plafond de charge décide. Si défini, le plafond suit l'écart du jour : la charge est ignorée lorsque les heures chères ne dépassent pas assez les heures creuses pour couvrir les pertes de conversion. La même marge joue dans l'autre sens : avec la vente à prix élevé active, une vente doit dépasser le prix de rachat ultérieur d'au moins autant. Par défaut : non défini (désactivé).",
-    round_trip_efficiency_use_measured: "Activé : le rendement est celui mesuré sur vos batteries (une batterie compte dès 50 cycles complets ; 0,85 jusque-là) et le suit. Désactivé : la valeur ci-dessous est fixe. Déplacer le curseur fixe une valeur et désactive ceci ; le réactiver supprime cette valeur. Par défaut : activé.",
+    round_trip_efficiency_use_measured: "Activé : le rendement est celui mesuré sur vos batteries (une batterie compte dès 50 cycles complets ; 0,85 jusque-là) et le suit. Désactivé : la valeur du curseur est fixe. Déplacer le curseur fixe une valeur et désactive ceci ; le réactiver supprime cette valeur. Par défaut : activé.",
     round_trip_efficiency: "Rendement aller-retour de la batterie (kWh sortis / kWh entrés), servant à valoriser l'énergie stockée pour la marge d'arbitrage et la vente à prix élevé. Des valeurs plus basses rendent le contrôle plus strict. Avec « utiliser la mesure » activé, il affiche la valeur mesurée sur vos batteries. Par défaut : mesuré (0,85 jusqu'à ce qu'une batterie ait 50 cycles).",
   },
   nl: {
@@ -1920,7 +1920,7 @@ const SYS_HELP = {
     max_price_threshold: "Laadplafond voor dynamische prijzen: de batterij laadt alleen van het net wanneer de prijs op of onder deze waarde ligt. Geldt alleen zolang de handmatige schakelaar aan staat; inschakelen zonder waarde begint bij de gemiddelde prijs van vandaag. Moet ≤ de ontlaadprijsondergrens blijven. Standaard: niet ingesteld (automatisch).",
     discharge_price_threshold: "Ontlaadondergrens voor dynamische prijzen: met Alleen ontladen bij hoge prijs aan ontlaadt de batterij alleen wanneer de prijs op of boven deze waarde ligt. Geldt alleen zolang de handmatige schakelaar aan staat; inschakelen zonder waarde begint bij de gemiddelde prijs van vandaag. Moet ≥ het laadprijsplafond blijven. Standaard: niet ingesteld (automatisch).",
     min_arbitrage_margin: "Minimale winst per kWh die vereist is voordat er van het net geladen wordt. 0 = uit, dan beslist alleen het laadplafond. Ingesteld laat het plafond de dagspreiding volgen: er wordt niet geladen wanneer de dure uren niet ver genoeg boven de goedkope liggen om de omzettingsverliezen terug te verdienen. Dezelfde marge werkt ook andersom: met verkoop bij hoge prijs aan moet een verkoop de latere terugkoopprijs met minstens dit bedrag overtreffen. Standaard: niet ingesteld (uit).",
-    round_trip_efficiency_use_measured: "Aan: het rendement is het gemeten rendement van je batterijen (een batterij telt mee vanaf 50 volledige cycli; tot dan 0,85) en volgt dat. Uit: de waarde hieronder is vast. De schuif verplaatsen zet een vaste waarde en schakelt dit uit; weer inschakelen gooit die waarde weg. Standaard: aan.",
+    round_trip_efficiency_use_measured: "Aan: het rendement is het gemeten rendement van je batterijen (een batterij telt mee vanaf 50 volledige cycli; tot dan 0,85) en volgt dat. Uit: de waarde van de schuif is vast. De schuif verplaatsen zet een vaste waarde en schakelt dit uit; weer inschakelen gooit die waarde weg. Standaard: aan.",
     round_trip_efficiency: "Retourrendement van de batterij (kWh eruit / kWh erin), waarmee opgeslagen energie wordt gewaardeerd voor de arbitragemarge en de verkoop bij hoge prijs. Lagere waarden maken de controle strenger. Met “gemeten waarde gebruiken” aan toont het de gemeten waarde van je batterijen. Standaard: gemeten (0,85 tot een batterij 50 cycli heeft).",
   },
 };
@@ -7358,6 +7358,14 @@ class MarstekVenusPanel extends HTMLElement {
     const i = s.indexOf(".");
     return i < 0 ? 0 : Math.min(3, s.length - i - 1);
   }
+  /** Step that sets the decimals of a slider with a panel `range`: its coarser
+   *  step while the value sits on it (0.02 €/kWh, whole cents), else the
+   *  entity's, so a typed 0.025 still shows exactly. */
+  _ctlDisplayStep(value, step, range) {
+    if (!range) return step;
+    const q = Number(value) / range[2];
+    return Math.abs(q - Math.round(q)) < 1e-6 ? range[2] : step;
+  }
   _fmtCtlNum(value, step, unit) {
     const v = Number(value);
     const txt = Number.isNaN(v) ? "—" : v.toFixed(this._stepDecimals(step));
@@ -7401,6 +7409,21 @@ class MarstekVenusPanel extends HTMLElement {
       const btn = document.createElement("button");
       btn.className = "ctl-btn";
       btn.innerHTML = `<ha-icon icon="${item.icon}"></ha-icon>${label}`;
+      // A button has no label column, so its options-flow help goes on the
+      // button (desktop hover) and on an info mark that opens it on touch
+      // without pressing the button.
+      const help = this._help(item.key);
+      if (help) {
+        btn.title = help;
+        const info = document.createElement("ha-icon");
+        info.className = "ctl-btn-info";
+        info.setAttribute("icon", "mdi:information-outline");
+        info.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this._showInfoPopover(info, help);
+        });
+        btn.appendChild(info);
+      }
       btn.addEventListener("click", () => {
         if (item.confirm && !window.confirm(`${label}?`)) return;
         hass.callService("button", "press", { entity_id: id });
@@ -7484,14 +7507,15 @@ class MarstekVenusPanel extends HTMLElement {
       const step = Number(a.step) || 1;
       range.addEventListener("input", () => {
         range.__sliding = true;
-        valEl.textContent = this._fmtCtlNum(this._clampToEntity(id, range.value), step, unit);
+        const v = this._clampToEntity(id, range.value);
+        valEl.textContent = this._fmtCtlNum(v, this._ctlDisplayStep(v, step, item.range), unit);
       });
       range.addEventListener("change", () => {
         const value = this._clampToEntity(id, range.value);
         this._markRangePending(range, value);
         hass.callService("number", "set_value", { entity_id: id, value });
       });
-      this._wireValueEdit(valEl, range, id, (v) => this._fmtCtlNum(v, step, unit));
+      this._wireValueEdit(valEl, range, id, (v) => this._fmtCtlNum(v, this._ctlDisplayStep(v, step, item.range), unit));
       wrap.appendChild(range);
       wrap.appendChild(valEl);
       // "default" tag for a setting with a "use default" switch (uses_default).
@@ -7570,7 +7594,7 @@ class MarstekVenusPanel extends HTMLElement {
         w.val.textContent =
           state.state == null || state.state === "unknown" || state.state === "unavailable"
             ? "—"
-            : this._fmtCtlNum(state.state, step, unit);
+            : this._fmtCtlNum(state.state, this._ctlDisplayStep(state.state, step, w.range), unit);
       }
       if (w.def) {
         const usesDefault = a.uses_default === true;
@@ -8153,6 +8177,8 @@ class MarstekVenusPanel extends HTMLElement {
       .ctl-num .ctl-val-input { width: 72px; font-family: var(--font-display); font-size: 13px; color: var(--ink); background: var(--bg-2); border: 1px solid var(--accent-line); border-radius: 6px; padding: 2px 6px; text-align: right; }
       .ctl-btn { grid-column: 1 / -1; display: inline-flex; align-items: center; justify-content: center; gap: 7px; width: 100%; padding: 8px 12px; border-radius: 11px; border: 1px solid var(--line-strong); background: var(--bg-2); color: var(--ink-mid); font-family: var(--font-ui); font-weight: 600; font-size: 13px; cursor: pointer; --mdc-icon-size: 16px; transition: background 0.15s, color 0.15s; }
       .ctl-btn:hover { background: var(--bg-hover); color: var(--ink); }
+      .ctl-btn .ctl-btn-info { --mdc-icon-size: 15px; color: var(--ink-dim); margin-left: 2px; }
+      .ctl-btn .ctl-btn-info:hover { color: var(--ink); }
       @media (max-width: 480px) { .bat-grid { grid-template-columns: 1fr; } }
 
       /* ===== Control tab ===== */
