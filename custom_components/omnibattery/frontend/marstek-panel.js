@@ -1189,8 +1189,8 @@ const SYS_SECTIONS = [
       // price-based (price_discharge_control switch; thresholds are dynamic-pricing
       // only), so on time-slot installs these rows simply don't render.
       { key: "max_price_threshold_enabled", domain: "switch", lk: "itemMaxPriceManual", icon: "mdi:cash-plus", adv: true, grp: "chargePrice" },
-      { key: "max_price_threshold", lk: "itemMaxPrice", icon: "mdi:cash-plus", adv: true, grp: "chargePrice", dep: "max_price_threshold_enabled", range: [-0.5, 1.0, 0.005] },
-      { key: "min_arbitrage_margin", lk: "itemArbitrageMargin", icon: "mdi:scale-balance", adv: true, grp: "chargePrice", range: [0, 0.3, 0.005] },
+      { key: "max_price_threshold", lk: "itemMaxPrice", icon: "mdi:cash-plus", adv: true, grp: "chargePrice", dep: "max_price_threshold_enabled", range: [-0.5, 1.0, 0.01] },
+      { key: "min_arbitrage_margin", lk: "itemArbitrageMargin", icon: "mdi:scale-balance", adv: true, grp: "chargePrice", range: [0, 0.3, 0.01] },
       { key: "round_trip_efficiency", lk: "itemRoundTripEfficiency", icon: "mdi:battery-sync", adv: true, grp: "chargePrice" },
       { key: "round_trip_efficiency_use_measured", domain: "switch", lk: "itemRoundTripMeasured", icon: "mdi:battery-sync", adv: true, grp: "chargePrice" },
       { key: "negative_price_charging", domain: "switch", lk: "itemNegativePriceCharging", icon: "mdi:battery-charging-100", grp: "chargePrice" },
@@ -1198,17 +1198,17 @@ const SYS_SECTIONS = [
       // its manual switch show only while that feature is on (a `dep` chain).
       { key: "price_discharge_control", domain: "switch", lk: "itemPriceDischarge", icon: "mdi:cash-clock", grp: "dischargePrice" },
       { key: "discharge_price_threshold_enabled", domain: "switch", lk: "itemDischargePriceManual", icon: "mdi:cash-minus", adv: true, grp: "dischargePrice", dep: "price_discharge_control" },
-      { key: "discharge_price_threshold", lk: "itemDischargePrice", icon: "mdi:cash-minus", adv: true, grp: "dischargePrice", dep: "discharge_price_threshold_enabled", range: [-0.5, 1.0, 0.005] },
+      { key: "discharge_price_threshold", lk: "itemDischargePrice", icon: "mdi:cash-minus", adv: true, grp: "dischargePrice", dep: "discharge_price_threshold_enabled", range: [-0.5, 1.0, 0.01] },
       { key: "discharge_reserve", domain: "switch", lk: "diagDischargeReserve", icon: "mdi:battery-lock", grp: "reserve" },
-      { key: "discharge_reserve_min_saving", lk: "itemDischargeReserveSaving", icon: "mdi:cash-minus", adv: true, grp: "reserve", dep: "discharge_reserve", range: [0, 0.2, 0.005] },
+      { key: "discharge_reserve_min_saving", lk: "itemDischargeReserveSaving", icon: "mdi:cash-minus", adv: true, grp: "reserve", dep: "discharge_reserve", range: [0, 0.2, 0.01] },
       { key: "discharge_reserve_status", domain: "binary_sensor", lk: "statusDischargeReserve", icon: "mdi:battery-lock", grp: "reserve" },
       { key: "high_price_sale", domain: "select", lk: "highPriceSale", icon: "mdi:transmission-tower-export", grp: "highPrice" },
       { key: "high_price_discharge_status", domain: "sensor", lk: "diagHighPriceDischarge", icon: "mdi:transmission-tower-export", grp: "highPrice" },
       { key: "surplus_price_hold", domain: "switch", lk: "diagSurplusHold", icon: "mdi:transmission-tower-export", grp: "surplus" },
-      { key: "surplus_hold_min_saving", lk: "itemSurplusHoldSaving", icon: "mdi:cash-minus", adv: true, grp: "surplus", dep: "surplus_price_hold", range: [0, 0.2, 0.005] },
+      { key: "surplus_hold_min_saving", lk: "itemSurplusHoldSaving", icon: "mdi:cash-minus", adv: true, grp: "surplus", dep: "surplus_price_hold", range: [0, 0.2, 0.01] },
       { key: "surplus_price_hold_status", domain: "binary_sensor", lk: "statusSurplusHold", icon: "mdi:transmission-tower-export", grp: "surplus" },
       { key: "smart_predischarge", domain: "switch", lk: "itemSmartPredischarge", icon: "mdi:battery-arrow-down-outline", grp: "predischarge" },
-      { key: "negative_injection_threshold", lk: "itemNegativeThreshold", icon: "mdi:cash-minus", adv: true, grp: "predischarge", dep: "smart_predischarge", range: [-0.5, 0.5, 0.005] },
+      { key: "negative_injection_threshold", lk: "itemNegativeThreshold", icon: "mdi:cash-minus", adv: true, grp: "predischarge", dep: "smart_predischarge", range: [-0.5, 0.5, 0.01] },
       { key: "predischarge_reserve_soc", lk: "itemPredischargeReserve", icon: "mdi:battery-lock", adv: true, grp: "predischarge", dep: "smart_predischarge" },
       { key: "curtailment_status", domain: "binary_sensor", lk: "statusPredischarge", icon: "mdi:solar-power-variant", grp: "predischarge" },
       // Dynamic pricing and time slot only; the system button does not exist on
@@ -7381,6 +7381,14 @@ class MarstekVenusPanel extends HTMLElement {
     const i = s.indexOf(".");
     return i < 0 ? 0 : Math.min(3, s.length - i - 1);
   }
+  /** Step that sets the decimals of a slider with a panel `range`: its coarser
+   *  step while the value sits on it (0.02 €/kWh, whole cents), else the
+   *  entity's, so a typed 0.025 still shows exactly. */
+  _ctlDisplayStep(value, step, range) {
+    if (!range) return step;
+    const q = Number(value) / range[2];
+    return Math.abs(q - Math.round(q)) < 1e-6 ? range[2] : step;
+  }
   _fmtCtlNum(value, step, unit) {
     const v = Number(value);
     const txt = Number.isNaN(v) ? "—" : v.toFixed(this._stepDecimals(step));
@@ -7522,14 +7530,15 @@ class MarstekVenusPanel extends HTMLElement {
       const step = Number(a.step) || 1;
       range.addEventListener("input", () => {
         range.__sliding = true;
-        valEl.textContent = this._fmtCtlNum(this._clampToEntity(id, range.value), step, unit);
+        const v = this._clampToEntity(id, range.value);
+        valEl.textContent = this._fmtCtlNum(v, this._ctlDisplayStep(v, step, item.range), unit);
       });
       range.addEventListener("change", () => {
         const value = this._clampToEntity(id, range.value);
         this._markRangePending(range, value);
         hass.callService("number", "set_value", { entity_id: id, value });
       });
-      this._wireValueEdit(valEl, range, id, (v) => this._fmtCtlNum(v, step, unit));
+      this._wireValueEdit(valEl, range, id, (v) => this._fmtCtlNum(v, this._ctlDisplayStep(v, step, item.range), unit));
       wrap.appendChild(range);
       wrap.appendChild(valEl);
       // "default" tag for a setting with a "use default" switch (uses_default).
@@ -7608,7 +7617,7 @@ class MarstekVenusPanel extends HTMLElement {
         w.val.textContent =
           state.state == null || state.state === "unknown" || state.state === "unavailable"
             ? "—"
-            : this._fmtCtlNum(state.state, step, unit);
+            : this._fmtCtlNum(state.state, this._ctlDisplayStep(state.state, step, w.range), unit);
       }
       if (w.def) {
         const usesDefault = a.uses_default === true;
