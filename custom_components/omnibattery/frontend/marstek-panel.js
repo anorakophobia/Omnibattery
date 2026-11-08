@@ -7424,6 +7424,21 @@ class MarstekVenusPanel extends HTMLElement {
       const btn = document.createElement("button");
       btn.className = "ctl-btn";
       btn.innerHTML = `<ha-icon icon="${item.icon}"></ha-icon>${label}`;
+      // A button has no label column, so its options-flow help goes on the
+      // button (desktop hover) and on an info mark that opens it on touch
+      // without pressing the button.
+      const help = this._help(item.key);
+      if (help) {
+        btn.title = help;
+        const info = document.createElement("ha-icon");
+        info.className = "ctl-btn-info";
+        info.setAttribute("icon", "mdi:information-outline");
+        info.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this._showInfoPopover(info, help);
+        });
+        btn.appendChild(info);
+      }
       btn.addEventListener("click", () => {
         if (item.confirm && !window.confirm(`${label}?`)) return;
         hass.callService("button", "press", { entity_id: id });
@@ -8182,6 +8197,8 @@ class MarstekVenusPanel extends HTMLElement {
       .ctl-num .ctl-val-input { width: 72px; font-family: var(--font-display); font-size: 13px; color: var(--ink); background: var(--bg-2); border: 1px solid var(--accent-line); border-radius: 6px; padding: 2px 6px; text-align: right; }
       .ctl-btn { grid-column: 1 / -1; display: inline-flex; align-items: center; justify-content: center; gap: 7px; width: 100%; padding: 8px 12px; border-radius: 11px; border: 1px solid var(--line-strong); background: var(--bg-2); color: var(--ink-mid); font-family: var(--font-ui); font-weight: 600; font-size: 13px; cursor: pointer; --mdc-icon-size: 16px; transition: background 0.15s, color 0.15s; }
       .ctl-btn:hover { background: var(--bg-hover); color: var(--ink); }
+      .ctl-btn .ctl-btn-info { --mdc-icon-size: 15px; color: var(--ink-dim); margin-left: 2px; }
+      .ctl-btn .ctl-btn-info:hover { color: var(--ink); }
       @media (max-width: 480px) { .bat-grid { grid-template-columns: 1fr; } }
 
       /* ===== Control tab ===== */
