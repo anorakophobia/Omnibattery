@@ -173,7 +173,7 @@ Optional controls in the **Control** tab solve different problems:
 
     ### Discharge Reserve
 
-    This opt-in feature saves stored energy for more expensive household-demand periods before the next sunrise. It projects the learned 15-minute demand profile and expected solar, lets the dearest periods claim only the energy they need, and reserves claims that exceed the current price by **Discharge Reserve Minimum Saving**. That control defaults to 0.05 currency/kWh.
+    This opt-in feature saves stored energy for more expensive household-demand periods before the next sunrise. It projects the learned 15-minute demand profile and expected solar, lets the dearest periods claim only the energy they need, and reserves claims that exceed the current price by **Discharge Reserve Minimum Saving**. That control is a price gap per kWh, the same for any battery size (never multiplied by the stored kWh), and defaults to 0.05 currency/kWh.
 
     Expected solar surplus can release part of the reserve, but only when it can physically fit in the battery. Surplus that **Surplus Price Hold** plans to export receives no credit. The planner credits 75% of qualifying expected surplus so forecast uncertainty cannot release the full reserve before actual production arrives.
 
