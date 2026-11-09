@@ -24,7 +24,7 @@ Una carga completa semanal proporciona a una batería de litio-ferrofosfato (LFP
 
 Con carga predictiva, cambiar el día o activar o desactivar la función vuelve a planificar en el siguiente ciclo de control; no hace falta **Reevaluar**.
 
-![Configura el día de carga completa semanal y el retraso solar](../assets/screenshots/configuration/advanced-weekly-full-charge-config.png){ width="650" style="display: block; margin: 0 auto;"}
+![La tarjeta de carga completa semanal: interruptor, día y estado](../assets/screenshots/configuration/advanced-weekly-full-charge-config.png){ width="485" style="display: block; margin: 0 auto;"}
 
 ## Qué verás
 
