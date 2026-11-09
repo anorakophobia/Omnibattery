@@ -72,7 +72,8 @@ def test_renderer_draws_a_divider_on_group_change():
     # hidden with Advanced off when the whole group it opens is advanced.
     assert "if (g && lastGrp && g !== lastGrp) {" in body
     assert 'sep.className = "sys-sep";' in body
-    assert 'rows.filter((x) => (x.grp ?? x.item.grp) === g).every((x) => x.item.adv)) sep.classList.add("adv-row")' in body
+    assert "const allAdv = () => rows.filter((x) => (x.grp ?? x.item.grp) === g).every((x) => x.item.adv);" in body
+    assert 'if (allAdv()) sep.classList.add("adv-row");' in body
     assert "gatedNodes.push(sep);" in body
     assert ".sys-sep { grid-column: 1 / -1;" in panel
 
@@ -187,3 +188,51 @@ def test_predictive_and_weekly_cards_show_their_status():
     assert '{ key: "weekly_full_charge", domain: "sensor", lk: "statusWeekly"' in weekly
     assert panel.count("statusPredictive:") == 6
     assert panel.count("statusWeekly:") == 6
+
+
+# Groups whose first row turns the whole group on or off (bold label), and the
+# groups without such a switch, which get a heading instead.
+LEADS = {
+    "base": "predictive_charging",
+    "floor": "min_soc_floor_enabled",
+    "dischargePrice": "price_discharge_control",
+    "reserve": "discharge_reserve",
+    "highPrice": "high_price_sale",
+    "surplus": "surplus_price_hold",
+    "predischarge": "smart_predischarge",
+}
+TITLES = {"solar": "grpSolar", "chargePrice": "grpChargePrice"}
+
+
+def test_every_feature_group_starts_with_a_bold_line():
+    panel = PANEL.read_text(encoding="utf-8")
+    start = panel.index('tk: "diagPredictive"')
+    card = panel[start : panel.index('tk: "diagChargeDelay"', start)]
+    leads = {k for k, _ in _predictive_items(panel) if "lead: true" in re.search(rf'\{{ key: "{k}",[^}}]*\}}', card).group(0)}
+    assert leads == set(LEADS.values())
+    # each lead is its group's first row
+    first = {}
+    for key, grp in EXPECTED:
+        first.setdefault(grp, key)
+    for grp, key in LEADS.items():
+        assert first[grp] == key
+    # every other group but the action button has a heading
+    assert 'grpTitles: { solar: "grpSolar", chargePrice: "grpChargePrice" },' in card
+    assert set(first) - set(LEADS) - set(TITLES) == {"action"}
+    for lk in TITLES.values():
+        assert panel.count(f" {lk}: ") == 6
+
+
+def test_renderer_draws_the_heading_and_the_bold_lead():
+    panel = PANEL.read_text(encoding="utf-8")
+    start = panel.index("_renderSysSections(defs, store, empty) {")
+    body = panel[start : panel.index("_hourlyWarnEl()", start)]
+    # once per group, gated like a row, hidden with Advanced off when the
+    # whole group is advanced
+    assert "const title = g && g !== lastGrp && sec.grpTitles && sec.grpTitles[g];" in body
+    assert 'h.className = "sys-grp-title";' in body
+    assert 'if (allAdv()) h.classList.add("adv-row");' in body
+    assert "gatedNodes.push(h);" in body
+    assert 'if (item.lead) k.classList.add("ctl-k-lead");' in panel
+    assert ".sys-grp-title { grid-column: 1 / -1;" in panel
+    assert ".sys-grid .ctl-k-lead {" in panel
