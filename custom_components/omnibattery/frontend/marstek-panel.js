@@ -123,7 +123,7 @@ const I18N = {
     secPhaseProtection: "Three-phase protection", threePhaseProtection: "Three-phase current protection",
     secManual: "Manual mode", secOffgridMeter: "Off-grid meter mode", secVacation: "Vacation mode", itemEnable: "Enable",
     secTempLimit: "Temperature charge limit", itemTempLimitC: "Temperature limit", itemTempLimitBand: "Ramp band", itemTempLimitFloor: "Minimum charge power", itemTempApplyDischarge: "Also throttle discharge",
-    itemMaxContracted: "Max contracted power", itemSolarSafety: "Solar safety margin", itemSolarSafetyDefault: "Solar safety margin: use default", tagDefault: "default", itemMinSocFloorEnable: "Guaranteed minimum SOC", itemMinSocFloor: "Minimum SOC",
+    itemMaxContracted: "Max contracted power", grpSolar: "Solar forecast", grpChargePrice: "Charge price", itemSolarSafety: "Solar safety margin", itemSolarSafetyDefault: "Solar safety margin: use default", tagDefault: "default", itemMinSocFloorEnable: "Guaranteed minimum SOC", itemMinSocFloor: "Minimum SOC",
     itemSocThreshold: "SOC threshold", itemPeakLimit: "Peak limit", itemExcludedPeakShaving: "Peak shaving for excluded devices",
     itemArbitrageMargin: "Min. arbitrage margin", itemRoundTripEfficiency: "Round-trip efficiency", itemRoundTripMeasured: "Round-trip efficiency: use measured", tagMeasured: "measured", itemMaxPrice: "Charge price ceiling", itemDischargePrice: "Discharge price floor", itemMaxPriceManual: "Manual charge price ceiling", itemDischargePriceManual: "Manual discharge price floor", itemPriceDischarge: "Discharge only above price", itemReevaluatePrices: "Re-evaluate now", itemNegativePriceCharging: "Charge at negative prices", itemPredictiveNotifications: "Notifications", itemSmartPredischarge: "Smart pre-discharge", itemNegativeThreshold: "Negative feed-in price threshold", itemPredischargeReserve: "Pre-discharge: lowest SOC", itemSurplusHoldSaving: "Surplus hold min. saving", itemDischargeReserveSaving: "Discharge reserve min. saving",
     itemDelaySafety: "Safety margin", itemDelaySoc: "Delay target SOC", itemDelaySocEnable: "Delay target SOC enabled", itemDelayDeadband: "Balance deadband",
@@ -214,7 +214,7 @@ const I18N = {
     secPhaseProtection: "Protección trifásica", threePhaseProtection: "Protección de corriente trifásica",
     secManual: "Modo manual", secOffgridMeter: "Modo de medidor off-grid", secVacation: "Modo vacaciones", itemEnable: "Activar",
     secTempLimit: "Límite de carga por temperatura", itemTempLimitC: "Límite de temperatura", itemTempLimitBand: "Banda de reducción", itemTempLimitFloor: "Potencia de carga mínima", itemTempApplyDischarge: "Reducir también la descarga",
-    itemMaxContracted: "Potencia contratada máx.", itemSolarSafety: "Margen de seguridad solar", itemSolarSafetyDefault: "Margen de seguridad solar: valor por defecto", tagDefault: "por defecto", itemMinSocFloorEnable: "SOC mínimo garantizado", itemMinSocFloor: "SOC mínimo",
+    itemMaxContracted: "Potencia contratada máx.", grpSolar: "Previsión solar", grpChargePrice: "Precio de carga", itemSolarSafety: "Margen de seguridad solar", itemSolarSafetyDefault: "Margen de seguridad solar: valor por defecto", tagDefault: "por defecto", itemMinSocFloorEnable: "SOC mínimo garantizado", itemMinSocFloor: "SOC mínimo",
     itemSocThreshold: "Umbral de SOC", itemPeakLimit: "Límite de pico", itemExcludedPeakShaving: "Reducción de picos para dispositivos excluidos",
     itemArbitrageMargin: "Margen mínimo de arbitraje", itemRoundTripEfficiency: "Eficiencia de ciclo completo", itemRoundTripMeasured: "Eficiencia de ciclo completo: usar la medida", tagMeasured: "medido", itemMaxPrice: "Techo de precio de carga", itemDischargePrice: "Suelo de precio de descarga", itemMaxPriceManual: "Techo de precio de carga manual", itemDischargePriceManual: "Suelo de precio de descarga manual", itemPriceDischarge: "Descargar solo si precio alto", itemReevaluatePrices: "Reevaluar ahora", itemNegativePriceCharging: "Cargar con precios negativos", itemPredictiveNotifications: "Notificaciones", itemSmartPredischarge: "Predescarga inteligente", itemNegativeThreshold: "Umbral de precio de inyección negativo", itemPredischargeReserve: "Predescarga: SOC más bajo", itemSurplusHoldSaving: "Ahorro mínimo para retener excedente", itemDischargeReserveSaving: "Ahorro mínimo de reserva de descarga",
     itemDelaySafety: "Margen de seguridad", itemDelaySoc: "SOC objetivo de retardo", itemDelaySocEnable: "SOC objetivo de retardo activo", itemDelayDeadband: "Banda muerta de balance",
@@ -301,7 +301,7 @@ const I18N = {
     bcBackupThreshold: "Llindar de reserva", bcVoltageTaper: "Reducció càrrega 100%", bcActiveBalance: "Balanç actiu",
     secManual: "Mode manual", secOffgridMeter: "Mode de mesurador off-grid", secVacation: "Mode vacances", itemEnable: "Activar",
     secTempLimit: "Límit de càrrega per temperatura", itemTempLimitC: "Límit de temperatura", itemTempLimitBand: "Banda de reducció", itemTempLimitFloor: "Potència de càrrega mínima", itemTempApplyDischarge: "Redueix també la descàrrega",
-    itemMaxContracted: "Potència contractada màx.", itemSolarSafety: "Marge de seguretat solar", itemSolarSafetyDefault: "Marge de seguretat solar: valor per defecte", tagDefault: "per defecte", itemMinSocFloorEnable: "SOC mínim garantit", itemMinSocFloor: "SOC mínim",
+    itemMaxContracted: "Potència contractada màx.", grpSolar: "Previsió solar", grpChargePrice: "Preu de càrrega", itemSolarSafety: "Marge de seguretat solar", itemSolarSafetyDefault: "Marge de seguretat solar: valor per defecte", tagDefault: "per defecte", itemMinSocFloorEnable: "SOC mínim garantit", itemMinSocFloor: "SOC mínim",
     itemSocThreshold: "Llindar de SOC", itemPeakLimit: "Límit de pic", itemExcludedPeakShaving: "Reducció de pics per a dispositius exclosos",
     itemArbitrageMargin: "Marge mínim d'arbitratge", itemRoundTripEfficiency: "Eficiència de cicle complet", itemRoundTripMeasured: "Eficiència de cicle complet: fer servir la mesurada", tagMeasured: "mesurat", itemMaxPrice: "Sostre de preu de càrrega", itemDischargePrice: "Terra de preu de descàrrega", itemMaxPriceManual: "Sostre de preu de càrrega manual", itemDischargePriceManual: "Terra de preu de descàrrega manual", itemPriceDischarge: "Descarregar només si preu alt", itemReevaluatePrices: "Reavaluar ara", itemNegativePriceCharging: "Carregar amb preus negatius", itemPredictiveNotifications: "Notificacions", itemSmartPredischarge: "Predescàrrega intel·ligent", itemNegativeThreshold: "Llindar de preu d'injecció negatiu", itemPredischargeReserve: "Predescàrrega: SOC més baix", itemSurplusHoldSaving: "Estalvi mínim per retenir excedent", itemDischargeReserveSaving: "Estalvi mínim de reserva de descàrrega",
     itemDelaySafety: "Marge de seguretat", itemDelaySoc: "SOC objectiu de retard", itemDelaySocEnable: "SOC objectiu de retard actiu", itemDelayDeadband: "Banda morta de balanç",
@@ -388,7 +388,7 @@ const I18N = {
     bcBackupThreshold: "Backup-Schwelle", bcVoltageTaper: "100%-Ladungsreduktion", bcActiveBalance: "Aktiver Zellabgleich",
     secManual: "Manueller Modus", secOffgridMeter: "Off-Grid-Zählermodus", secVacation: "Urlaubsmodus", itemEnable: "Aktivieren",
     secTempLimit: "Temperaturbasierte Ladebegrenzung", itemTempLimitC: "Temperaturgrenze", itemTempLimitBand: "Drosselbereich", itemTempLimitFloor: "Minimale Ladeleistung", itemTempApplyDischarge: "Auch Entladung drosseln",
-    itemMaxContracted: "Max. Vertragsleistung", itemSolarSafety: "Sicherheitspuffer Solar", itemSolarSafetyDefault: "Sicherheitspuffer Solar: Standardwert", tagDefault: "Standard", itemMinSocFloorEnable: "Garantierter Mindest-SOC", itemMinSocFloor: "Mindest-SOC",
+    itemMaxContracted: "Max. Vertragsleistung", grpSolar: "Solarprognose", grpChargePrice: "Ladepreis", itemSolarSafety: "Sicherheitspuffer Solar", itemSolarSafetyDefault: "Sicherheitspuffer Solar: Standardwert", tagDefault: "Standard", itemMinSocFloorEnable: "Garantierter Mindest-SOC", itemMinSocFloor: "Mindest-SOC",
     itemSocThreshold: "SOC-Schwelle", itemPeakLimit: "Spitzenlimit", itemExcludedPeakShaving: "Spitzenlastkappung für ausgeschlossene Geräte",
     itemArbitrageMargin: "Min. Arbitragemarge", itemRoundTripEfficiency: "Round-Trip-Wirkungsgrad", itemRoundTripMeasured: "Round-Trip-Wirkungsgrad: gemessenen verwenden", tagMeasured: "gemessen", itemMaxPrice: "Lade-Preisobergrenze", itemDischargePrice: "Entlade-Preisuntergrenze", itemMaxPriceManual: "Manuelle Lade-Preisobergrenze", itemDischargePriceManual: "Manuelle Entlade-Preisuntergrenze", itemPriceDischarge: "Nur über Preis entladen", itemReevaluatePrices: "Jetzt neu bewerten", itemNegativePriceCharging: "Bei negativen Preisen laden", itemPredictiveNotifications: "Benachrichtigungen", itemSmartPredischarge: "Intelligente Vorentladung", itemNegativeThreshold: "Schwelle negativer Einspeisepreis", itemPredischargeReserve: "Vorentladung: niedrigster SOC", itemSurplusHoldSaving: "Min. Ersparnis für Überschussbremse", itemDischargeReserveSaving: "Min. Ersparnis für Entladereserve",
     itemDelaySafety: "Sicherheitspuffer", itemDelaySoc: "Verzögerungs-Ziel-SOC", itemDelaySocEnable: "Verzögerungs-Ziel-SOC aktiv", itemDelayDeadband: "Bilanz-Totband",
@@ -475,7 +475,7 @@ const I18N = {
     bcBackupThreshold: "Seuil de secours", bcVoltageTaper: "Réduction charge 100%", bcActiveBalance: "Équilibrage actif",
     secManual: "Mode manuel", secOffgridMeter: "Mode compteur hors réseau", secVacation: "Mode vacances", itemEnable: "Activer",
     secTempLimit: "Limite de charge par température", itemTempLimitC: "Limite de température", itemTempLimitBand: "Plage de réduction", itemTempLimitFloor: "Puissance de charge minimale", itemTempApplyDischarge: "Réduire aussi la décharge",
-    itemMaxContracted: "Puissance contractuelle max.", itemSolarSafety: "Marge de sécurité solaire", itemSolarSafetyDefault: "Marge de sécurité solaire : valeur par défaut", tagDefault: "par défaut", itemMinSocFloorEnable: "SOC minimum garanti", itemMinSocFloor: "SOC minimum",
+    itemMaxContracted: "Puissance contractuelle max.", grpSolar: "Prévision solaire", grpChargePrice: "Prix de charge", itemSolarSafety: "Marge de sécurité solaire", itemSolarSafetyDefault: "Marge de sécurité solaire : valeur par défaut", tagDefault: "par défaut", itemMinSocFloorEnable: "SOC minimum garanti", itemMinSocFloor: "SOC minimum",
     itemSocThreshold: "Seuil SOC", itemPeakLimit: "Limite de pointe", itemExcludedPeakShaving: "Écrêtement des pointes pour appareils exclus",
     itemArbitrageMargin: "Marge d'arbitrage min.", itemRoundTripEfficiency: "Rendement aller-retour", itemRoundTripMeasured: "Rendement aller-retour : utiliser la mesure", tagMeasured: "mesuré", itemMaxPrice: "Plafond de prix de charge", itemDischargePrice: "Plancher de prix de décharge", itemMaxPriceManual: "Plafond de prix de charge manuel", itemDischargePriceManual: "Plancher de prix de décharge manuel", itemPriceDischarge: "Décharger si prix élevé", itemReevaluatePrices: "Réévaluer maintenant", itemNegativePriceCharging: "Charger aux prix négatifs", itemPredictiveNotifications: "Notifications", itemSmartPredischarge: "Pré-décharge intelligente", itemNegativeThreshold: "Seuil de prix d'injection négatif", itemPredischargeReserve: "Pré-décharge : SOC le plus bas", itemSurplusHoldSaving: "Économie min. pour retenir le surplus", itemDischargeReserveSaving: "Économie min. pour réserve de décharge",
     itemDelaySafety: "Marge de sécurité", itemDelaySoc: "SOC cible du délai", itemDelaySocEnable: "SOC cible du délai actif", itemDelayDeadband: "Bande morte de bilan",
@@ -562,7 +562,7 @@ const I18N = {
     bcBackupThreshold: "Back-updrempel", bcVoltageTaper: "100%-laadbegrenzing", bcActiveBalance: "Actieve celbalans",
     secManual: "Handmatige modus", secOffgridMeter: "Off-grid metermodus", secVacation: "Vakantiemodus", itemEnable: "Inschakelen",
     secTempLimit: "Temperatuurbegrenzing laden", itemTempLimitC: "Temperatuurlimiet", itemTempLimitBand: "Afbouwband", itemTempLimitFloor: "Minimaal laadvermogen", itemTempApplyDischarge: "Ook ontladen terugregelen",
-    itemMaxContracted: "Max. gecontracteerd vermogen", itemSolarSafety: "Veiligheidsmarge zon", itemSolarSafetyDefault: "Veiligheidsmarge zon: standaardwaarde", tagDefault: "standaard", itemMinSocFloorEnable: "Gegarandeerde min. SOC", itemMinSocFloor: "Min. SOC",
+    itemMaxContracted: "Max. gecontracteerd vermogen", grpSolar: "Zonneprognose", grpChargePrice: "Laadprijs", itemSolarSafety: "Veiligheidsmarge zon", itemSolarSafetyDefault: "Veiligheidsmarge zon: standaardwaarde", tagDefault: "standaard", itemMinSocFloorEnable: "Gegarandeerde min. SOC", itemMinSocFloor: "Min. SOC",
     itemSocThreshold: "SOC-drempel", itemPeakLimit: "Pieklimiet", itemExcludedPeakShaving: "Piekbegrenzing voor uitgesloten apparaten",
     itemArbitrageMargin: "Min. arbitragemarge", itemRoundTripEfficiency: "Retourrendement", itemRoundTripMeasured: "Retourrendement: gemeten waarde gebruiken", tagMeasured: "gemeten", itemMaxPrice: "Laadprijsplafond", itemDischargePrice: "Ontlaadprijsondergrens", itemMaxPriceManual: "Handmatig laadprijsplafond", itemDischargePriceManual: "Handmatige ontlaadprijsondergrens", itemPriceDischarge: "Alleen ontladen bij hoge prijs", itemReevaluatePrices: "Nu herberekenen", itemNegativePriceCharging: "Laden bij negatieve prijzen", itemPredictiveNotifications: "Meldingen", itemSmartPredischarge: "Slim voorontladen", itemNegativeThreshold: "Drempel negatieve terugleverprijs", itemPredischargeReserve: "Voorontladen: laagste SOC", itemSurplusHoldSaving: "Min. besparing voor prijsrem", itemDischargeReserveSaving: "Min. besparing voor ontlaadreserve",
     itemDelaySafety: "Veiligheidsmarge", itemDelaySoc: "Doel-SOC vertraging", itemDelaySocEnable: "Doel-SOC vertraging actief", itemDelayDeadband: "Balans dode band",
@@ -1169,18 +1169,21 @@ const SYS_SECTIONS = [
   {
     tk: "diagPredictive",
     icon: "mdi:brain",
+    // A group without a switch that turns it on or off gets a heading; the
+    // others start with that switch, marked `lead` (bold label).
+    grpTitles: { solar: "grpSolar", chargePrice: "grpChargePrice" },
     items: [
       // One `grp` per feature (its switch, its settings, its status row); a
       // divider is drawn whenever it changes between two live rows. A feature's
       // settings carry `dep` on its switch and show only while it is on. Buying
       // first (solar margin, SOC floor, charge price), then using, selling and
       // the solar-surplus features, then the action button.
-      { key: "predictive_charging", domain: "switch", lk: "itemEnable", icon: "mdi:brain", gate: true, grp: "base" },
+      { key: "predictive_charging", domain: "switch", lk: "itemEnable", icon: "mdi:brain", gate: true, grp: "base", lead: true },
       { key: "predictive_charging_notifications", domain: "switch", lk: "itemPredictiveNotifications", icon: "mdi:bell-ring-outline", grp: "base" },
       { key: "predictive_charging_active", domain: "binary_sensor", lk: "statusPredictive", icon: "mdi:brain", grp: "base" },
       { key: "predictive_safety_margin_kwh", lk: "itemSolarSafety", icon: "mdi:solar-power-variant", adv: true, grp: "solar" },
       { key: "predictive_safety_margin_kwh_use_default", domain: "switch", lk: "itemSolarSafetyDefault", icon: "mdi:solar-power-variant", adv: true, grp: "solar" },
-      { key: "min_soc_floor_enabled", domain: "switch", lk: "itemMinSocFloorEnable", icon: "mdi:battery-arrow-up", adv: true, grp: "floor" },
+      { key: "min_soc_floor_enabled", domain: "switch", lk: "itemMinSocFloorEnable", icon: "mdi:battery-arrow-up", adv: true, grp: "floor", lead: true },
       { key: "predictive_min_soc_floor", lk: "itemMinSocFloor", icon: "mdi:battery-arrow-up", adv: true, grp: "floor", dep: "min_soc_floor_enabled" },
       // Pricing controls: their entities only exist when the predictive mode is
       // price-based (price_discharge_control switch; thresholds are dynamic-pricing
@@ -1193,18 +1196,18 @@ const SYS_SECTIONS = [
       { key: "negative_price_charging", domain: "switch", lk: "itemNegativePriceCharging", icon: "mdi:battery-charging-100", grp: "chargePrice" },
       // The discharge floor is read only by "Discharge only above price"; it and
       // its manual switch show only while that feature is on (a `dep` chain).
-      { key: "price_discharge_control", domain: "switch", lk: "itemPriceDischarge", icon: "mdi:cash-clock", grp: "dischargePrice" },
+      { key: "price_discharge_control", domain: "switch", lk: "itemPriceDischarge", icon: "mdi:cash-clock", grp: "dischargePrice", lead: true },
       { key: "discharge_price_threshold_enabled", domain: "switch", lk: "itemDischargePriceManual", icon: "mdi:cash-minus", adv: true, grp: "dischargePrice", dep: "price_discharge_control" },
       { key: "discharge_price_threshold", lk: "itemDischargePrice", icon: "mdi:cash-minus", adv: true, grp: "dischargePrice", dep: "discharge_price_threshold_enabled", range: [-0.5, 1.0, 0.01] },
-      { key: "discharge_reserve", domain: "switch", lk: "diagDischargeReserve", icon: "mdi:battery-lock", grp: "reserve" },
+      { key: "discharge_reserve", domain: "switch", lk: "diagDischargeReserve", icon: "mdi:battery-lock", grp: "reserve", lead: true },
       { key: "discharge_reserve_min_saving", lk: "itemDischargeReserveSaving", icon: "mdi:cash-minus", adv: true, grp: "reserve", dep: "discharge_reserve", range: [0, 0.2, 0.01] },
       { key: "discharge_reserve_status", domain: "binary_sensor", lk: "statusDischargeReserve", icon: "mdi:battery-lock", grp: "reserve" },
-      { key: "high_price_sale", domain: "select", lk: "highPriceSale", icon: "mdi:transmission-tower-export", grp: "highPrice" },
+      { key: "high_price_sale", domain: "select", lk: "highPriceSale", icon: "mdi:transmission-tower-export", grp: "highPrice", lead: true },
       { key: "high_price_discharge_status", domain: "sensor", lk: "diagHighPriceDischarge", icon: "mdi:transmission-tower-export", grp: "highPrice" },
-      { key: "surplus_price_hold", domain: "switch", lk: "diagSurplusHold", icon: "mdi:transmission-tower-export", grp: "surplus" },
+      { key: "surplus_price_hold", domain: "switch", lk: "diagSurplusHold", icon: "mdi:transmission-tower-export", grp: "surplus", lead: true },
       { key: "surplus_hold_min_saving", lk: "itemSurplusHoldSaving", icon: "mdi:cash-minus", adv: true, grp: "surplus", dep: "surplus_price_hold", range: [0, 0.2, 0.01] },
       { key: "surplus_price_hold_status", domain: "binary_sensor", lk: "statusSurplusHold", icon: "mdi:transmission-tower-export", grp: "surplus" },
-      { key: "smart_predischarge", domain: "switch", lk: "itemSmartPredischarge", icon: "mdi:battery-arrow-down-outline", grp: "predischarge" },
+      { key: "smart_predischarge", domain: "switch", lk: "itemSmartPredischarge", icon: "mdi:battery-arrow-down-outline", grp: "predischarge", lead: true },
       { key: "negative_injection_threshold", lk: "itemNegativeThreshold", icon: "mdi:cash-minus", adv: true, grp: "predischarge", dep: "smart_predischarge", range: [-0.5, 0.5, 0.01] },
       { key: "predischarge_reserve_soc", lk: "itemPredischargeReserve", icon: "mdi:battery-lock", adv: true, grp: "predischarge", dep: "smart_predischarge" },
       { key: "curtailment_status", domain: "binary_sensor", lk: "statusPredischarge", icon: "mdi:solar-power-variant", grp: "predischarge" },
@@ -6931,12 +6934,22 @@ class MarstekVenusPanel extends HTMLElement {
       const depRows = [];
       for (const r of rows) {
         const g = r.grp ?? r.item.grp;
+        const allAdv = () => rows.filter((x) => (x.grp ?? x.item.grp) === g).every((x) => x.item.adv);
         if (g && lastGrp && g !== lastGrp) {
           const sep = document.createElement("div");
           sep.className = "sys-sep";
-          if (rows.filter((x) => (x.grp ?? x.item.grp) === g).every((x) => x.item.adv)) sep.classList.add("adv-row");
+          if (allAdv()) sep.classList.add("adv-row");
           grid.appendChild(sep);
           gatedNodes.push(sep);
+        }
+        const title = g && g !== lastGrp && sec.grpTitles && sec.grpTitles[g];
+        if (title) {
+          const h = document.createElement("div");
+          h.className = "sys-grp-title";
+          h.textContent = this._t(title);
+          if (allAdv()) h.classList.add("adv-row");
+          grid.appendChild(h);
+          gatedNodes.push(h);
         }
         if (g) lastGrp = g;
         const frag = this._buildSysControl(r.item, r.id, store, r.multi);
@@ -7436,6 +7449,7 @@ class MarstekVenusPanel extends HTMLElement {
     const k = document.createElement("span");
     k.className = "ctl-k";
     k.innerHTML = `<ha-icon icon="${item.icon || "mdi:cog-outline"}"></ha-icon><span>${label}</span>`;
+    if (item.lead) k.classList.add("ctl-k-lead");
     if (item.titleFn) {
       k.classList.add("ctl-k-info");
       // tap/click shows the detail popover — mobile has no hover. The native
@@ -8263,6 +8277,9 @@ class MarstekVenusPanel extends HTMLElement {
          and wrap, so sliders/buttons never overflow the card box at ~1080p */
       .sys-grid { margin-top: 14px; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); }
       .sys-sep { grid-column: 1 / -1; height: 1px; margin: 2px 0; background: var(--line); }
+      /* a group's heading, or its main switch's label: what the group is about */
+      .sys-grp-title { grid-column: 1 / -1; color: var(--ink); font-size: 13px; font-weight: 600; }
+      .sys-grid .ctl-k-lead { color: var(--ink); font-weight: 600; }
       .sys-grid .ctl-k { white-space: normal; overflow-wrap: anywhere; }
       /* Auto-fit can legitimately make a card ~300px wide. At that point a
          label/value pair leaves too little room for a usable range input. Stack
