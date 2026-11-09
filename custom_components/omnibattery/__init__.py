@@ -1091,9 +1091,8 @@ class ChargeDischargeController:
             config_entry.data, CONF_DISCHARGE_PRICE_THRESHOLD, CONF_DISCHARGE_PRICE_THRESHOLD_ENABLED
         )
         self.min_arbitrage_margin = config_entry.data.get(CONF_MIN_ARBITRAGE_MARGIN, None)
-        self.round_trip_efficiency = config_entry.data.get(
-            CONF_ROUND_TRIP_EFFICIENCY, DEFAULT_ROUND_TRIP_EFFICIENCY
-        )
+        # None = measured (its "use measured" switch on); see effective_round_trip_efficiency.
+        self.round_trip_efficiency = config_entry.data.get(CONF_ROUND_TRIP_EFFICIENCY)
         self.smart_predischarge_enabled = config_entry.data.get(
             CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
         )
@@ -3137,11 +3136,30 @@ class ChargeDischargeController:
         that also land in entry data — shadow selects, manual force mode,
         capability detection at startup — do not. Battery capacity is telemetry,
         not a setting, so it is deliberately absent.
+
+        Both what the plan buys (the balance knobs) and which slots it picks
+        (charge ceiling, arbitrage margin, round-trip efficiency, the
+        pre-discharge plan) count, as does the weekly full charge: a moved day
+        or a switched-off run must not leave the old weekly slots booked. The
+        efficiency is the configured value; the measured one drifts on its own.
+        Settings read live every cycle (discharge floor, minimum savings,
+        High-Price Sale) need no re-plan and stay out.
         """
+
+        def _rounded(value):
+            return None if value is None else round(float(value), 4)
+
         return (
             round(float(self._predictive_safety_margin_kwh or 0.0), 3),
             round(float(self._predictive_min_soc_floor or 0.0), 3),
             bool(self._predictive_min_soc_floor_enabled),
+            _rounded(getattr(self, "max_price_threshold", None)),
+            _rounded(getattr(self, "min_arbitrage_margin", None)),
+            _rounded(getattr(self, "round_trip_efficiency", None)),
+            _rounded(getattr(self, "negative_injection_threshold", None)),
+            _rounded(getattr(self, "predischarge_reserve_soc", None)),
+            bool(getattr(self, "weekly_full_charge_enabled", False)),
+            getattr(self, "weekly_full_charge_day", None),
             tuple(
                 (
                     getattr(c, "device_key", None),
@@ -3304,9 +3322,7 @@ class ChargeDischargeController:
             self.config_entry.data, CONF_DISCHARGE_PRICE_THRESHOLD, CONF_DISCHARGE_PRICE_THRESHOLD_ENABLED
         )
         self.min_arbitrage_margin = self.config_entry.data.get(CONF_MIN_ARBITRAGE_MARGIN, None)
-        self.round_trip_efficiency = self.config_entry.data.get(
-            CONF_ROUND_TRIP_EFFICIENCY, DEFAULT_ROUND_TRIP_EFFICIENCY
-        )
+        self.round_trip_efficiency = self.config_entry.data.get(CONF_ROUND_TRIP_EFFICIENCY)
         self.smart_predischarge_enabled = self.config_entry.data.get(
             CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
         )
@@ -10906,8 +10922,12 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 that never enabled pre-discharge reach the new default.
     v15 -> v16: merge the two high-price switches into the high_price_sale
                 select; arbitrage-only folds into surplus + arbitrage.
+    v16 -> v17: a stored round-trip efficiency of exactly the default (0.85)
+                meant "use the measured value"; that is now the absent key (its
+                "use measured" switch), so the key is dropped and a stored 0.85
+                from then on is a fixed value.
     """
-    if entry.version >= 16:
+    if entry.version >= 17:
         return True
 
     new_data = dict(entry.data)
@@ -11296,11 +11316,19 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "(high-price switches merged into the high_price_sale select)",
         )
 
+    if entry.version < 17:
+        if new_data.get(CONF_ROUND_TRIP_EFFICIENCY) == DEFAULT_ROUND_TRIP_EFFICIENCY:
+            new_data.pop(CONF_ROUND_TRIP_EFFICIENCY)
+        _LOGGER.info(
+            "Omnibattery: migrated config entry to version 17 "
+            "(round-trip efficiency 0.85 now means the measured value only when unset)",
+        )
+
     hass.config_entries.async_update_entry(
         entry,
         title="Omnibattery",
         data=new_data,
-        version=16,
+        version=17,
     )
     return True
 

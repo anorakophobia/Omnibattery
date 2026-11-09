@@ -1546,6 +1546,12 @@
       "min_soc_floor_enabled": {
         "name": "SOC Minimum Garanti"
       },
+      "predictive_safety_margin_kwh_use_default": {
+        "name": "Marge de Sécurité Prévision Solaire : utiliser la valeur par défaut"
+      },
+      "round_trip_efficiency_use_measured": {
+        "name": "Rendement aller-retour : utiliser la valeur mesurée"
+      },
       "max_price_threshold_enabled": {
         "name": "Plafond de prix de charge manuel"
       },
@@ -1577,7 +1583,7 @@
         "name": "Limite de décharge par température"
       },
       "weekly_full_charge_delay": {
-        "name": "Retarder la Charge Complète Hebdomadaire"
+        "name": "Charge complète hebdomadaire : attendre le délai de charge"
       },
       "capacity_protection": {
         "name": "Écrêtement de Pointe"
@@ -1646,6 +1652,18 @@
       }
     },
     "sensor": {
+      "excluded_device_status": {
+        "name": "{device} – État",
+        "state": {
+          "paused": "En pause",
+          "unmeasured": "Pas de mesure de puissance",
+          "idle": "Inactif",
+          "priority": "Priorité (la batterie cède)",
+          "solar_surplus": "Sur surplus solaire",
+          "excluded": "Exclu de la batterie",
+          "covered": "Couvert par la batterie"
+        }
+      },
       "discharge_window": {
         "name": "Fenêtre de Décharge",
         "state": {
@@ -2470,6 +2488,9 @@
       "surplus_price_hold_status": {
         "name": "État de la retenue de surplus selon le prix"
       },
+      "temperature_charge_limit_status": {
+        "name": "État de la limite de charge par température"
+      },
       "discharge_reserve_status": {
         "name": "État de la réserve de décharge"
       },
@@ -2749,13 +2770,13 @@
         "name": "Marge de Sécurité Prévision Solaire"
       },
       "negative_injection_threshold": {
-        "name": "Seuil d'injection négative"
+        "name": "Seuil de prix d'injection négatif"
       },
       "predischarge_reserve_soc": {
-        "name": "Réserve de SOC de pré-décharge"
+        "name": "SOC le plus bas de pré-décharge"
       },
       "predictive_min_soc_floor": {
-        "name": "SOC minimum garanti"
+        "name": "Niveau de SOC minimum garanti"
       },
       "battery_capacity": {
         "name": "Capacité de la Batterie"
@@ -2782,7 +2803,7 @@
         "name": "Puissance Max. de l'Onduleur"
       },
       "max_price_threshold": {
-        "name": "Prix maximum (charge)"
+        "name": "Plafond de prix de charge"
       },
       "discharge_price_threshold": {
         "name": "Prix plancher de décharge"

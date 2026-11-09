@@ -1546,6 +1546,12 @@
       "min_soc_floor_enabled": {
         "name": "Garantierter Mindest-SOC"
       },
+      "predictive_safety_margin_kwh_use_default": {
+        "name": "Sicherheitspuffer Solarprognose: Standardwert verwenden"
+      },
+      "round_trip_efficiency_use_measured": {
+        "name": "Round-Trip-Wirkungsgrad: gemessenen Wert verwenden"
+      },
       "max_price_threshold_enabled": {
         "name": "Manuelle Lade-Preisobergrenze"
       },
@@ -1577,7 +1583,7 @@
         "name": "Temperatur-Entladegrenze"
       },
       "weekly_full_charge_delay": {
-        "name": "Wöchentliche Vollladung verzögern"
+        "name": "Wöchentliche Vollladung: auf Ladeverzögerung warten"
       },
       "capacity_protection": {
         "name": "Spitzenlastkappung"
@@ -1646,6 +1652,18 @@
       }
     },
     "sensor": {
+      "excluded_device_status": {
+        "name": "{device} – Status",
+        "state": {
+          "paused": "Pausiert",
+          "unmeasured": "Keine Leistungsmessung",
+          "idle": "Inaktiv",
+          "priority": "Vorrang (Batterie weicht)",
+          "solar_surplus": "Mit Solarüberschuss",
+          "excluded": "Von der Batterie ausgeschlossen",
+          "covered": "Von der Batterie gedeckt"
+        }
+      },
       "discharge_window": {
         "name": "Entladefenster",
         "state": {
@@ -2470,6 +2488,9 @@
       "surplus_price_hold_status": {
         "name": "Status Preisbremse Solarüberschuss"
       },
+      "temperature_charge_limit_status": {
+        "name": "Status temperaturbasierte Ladebegrenzung"
+      },
       "discharge_reserve_status": {
         "name": "Status Entladereserve"
       },
@@ -2749,13 +2770,13 @@
         "name": "Sicherheitspuffer Solarprognose"
       },
       "negative_injection_threshold": {
-        "name": "Schwellenwert für negative Einspeisung"
+        "name": "Schwelle negativer Einspeisepreis"
       },
       "predischarge_reserve_soc": {
-        "name": "SOC-Reserve für Vorentladung"
+        "name": "Niedrigster SOC der Vorentladung"
       },
       "predictive_min_soc_floor": {
-        "name": "Garantierter Mindest-SOC"
+        "name": "Garantierter Mindest-SOC (Wert)"
       },
       "battery_capacity": {
         "name": "Batteriekapazität"
@@ -2782,7 +2803,7 @@
         "name": "Max. Wechselrichterleistung"
       },
       "max_price_threshold": {
-        "name": "Maximaler Preis (Laden)"
+        "name": "Lade-Preisobergrenze"
       },
       "discharge_price_threshold": {
         "name": "Entlade-Preisuntergrenze"

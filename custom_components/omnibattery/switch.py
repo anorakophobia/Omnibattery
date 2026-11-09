@@ -12,7 +12,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .energy import effective_round_trip_efficiency
+from .number import config_number_default
 from .const import (
+    CONFIG_NUMBER_DEFINITIONS,
+    CONF_ROUND_TRIP_EFFICIENCY,
     DOMAIN,
     CONF_CAPACITY_PROTECTION_ENABLED,
     CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES,
@@ -49,6 +53,7 @@ from .const import (
     CONF_DISCHARGE_PRICE_THRESHOLD,
     CONF_MAX_PRICE_THRESHOLD_ENABLED,
     CONF_DISCHARGE_PRICE_THRESHOLD_ENABLED,
+    effective_price_threshold,
     CONF_ENABLE_PREDICTIVE_CHARGING,
     CONF_VACATION_MODE_ENABLED,
     CONF_THREE_PHASE_ENABLED,
@@ -107,6 +112,12 @@ async def async_setup_entry(
         # be turned on from the dashboard even if configured off at setup).
         entities.append(WeeklyFullChargeEnableSwitch(hass, entry, controller))
         entities.append(VacationModeSwitch(hass, entry, controller))
+        # A "use default" switch beside each setting slider that has one, under
+        # the slider's own condition.
+        for definition in CONFIG_NUMBER_DEFINITIONS:
+            condition = definition.get("condition")
+            if definition.get("default_switch") and (not condition or condition in entry.data):
+                entities.append(ConfigNumberDefaultSwitch(hass, entry, controller, definition))
 
     # Keep mode-specific predictive controls registered while the master switch
     # is off. The dashboard hides them behind that switch, and the pricing engine
@@ -116,6 +127,8 @@ async def async_setup_entry(
         mode = entry.data.get(CONF_PREDICTIVE_CHARGING_MODE)
         if mode == PREDICTIVE_MODE_DYNAMIC_PRICING:
             entities.append(PriceDischargeControlSwitch(hass, entry, controller))
+            # beside the efficiency slider, which exists in this mode only
+            entities.append(RoundTripEfficiencyMeasuredSwitch(hass, entry, controller))
             entities.append(SmartPredischargeSwitch(hass, entry, controller))
             entities.append(NegativePriceChargingSwitch(hass, entry, controller))
         elif mode == PREDICTIVE_MODE_REALTIME_PRICE:
@@ -1227,6 +1240,27 @@ class WeeklyFullChargeDelaySwitch(SwitchEntity):
         }
 
 
+def excluded_device_attributes(entry: ConfigEntry, index: int, label: str) -> dict:
+    """Attributes every per-device excluded-device entity carries.
+
+    The panel groups a device's rows by ``excluded_device_index``, sorts by
+    ``excluded_device`` and shows ``type``: excluded (the home sensor includes
+    it, the battery does not power it) or additional (the battery covers it).
+    """
+    devices = entry.data.get("excluded_devices", [])
+    if index >= len(devices):
+        return {}
+    device = devices[index]
+    included = device.get("included_in_consumption", True)
+    return {
+        "power_sensor": device.get("power_sensor", ""),
+        "included_in_consumption": included,
+        "type": "excluded" if included else "additional",
+        "excluded_device": label,
+        "excluded_device_index": index,
+    }
+
+
 class ExcludedDeviceEnabledSwitch(SwitchEntity):
     """Switch to enable/disable an individual excluded device at runtime.
 
@@ -1242,6 +1276,7 @@ class ExcludedDeviceEnabledSwitch(SwitchEntity):
 
         device = entry.data.get("excluded_devices", [])[index]
         friendly = excluded_device_name(hass, device)
+        self._device_label = friendly
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_enabled"
@@ -1261,15 +1296,8 @@ class ExcludedDeviceEnabledSwitch(SwitchEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Return the power sensor entity as an attribute."""
-        devices = self.entry.data.get("excluded_devices", [])
-        if self._device_index >= len(devices):
-            return {}
-        device = devices[self._device_index]
-        return {
-            "power_sensor": device.get("power_sensor", ""),
-            "included_in_consumption": device.get("included_in_consumption", True),
-        }
+        """The device's power sensor, type, name and index (panel grouping)."""
+        return excluded_device_attributes(self.entry, self._device_index, self._device_label)
 
     async def _update_enabled(self, enabled: bool) -> None:
         """Update enabled state for this device in config_entry.data."""
@@ -1323,6 +1351,7 @@ class ExcludedDeviceSolarSurplusSwitch(SwitchEntity):
 
         device = entry.data.get("excluded_devices", [])[index]
         friendly = excluded_device_name(hass, device)
+        self._device_label = friendly
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_solar_surplus"
@@ -1342,15 +1371,8 @@ class ExcludedDeviceSolarSurplusSwitch(SwitchEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Return the power sensor entity as an attribute."""
-        devices = self.entry.data.get("excluded_devices", [])
-        if self._device_index >= len(devices):
-            return {}
-        device = devices[self._device_index]
-        return {
-            "power_sensor": device.get("power_sensor", ""),
-            "included_in_consumption": device.get("included_in_consumption", True),
-        }
+        """The device's power sensor, type, name and index (panel grouping)."""
+        return excluded_device_attributes(self.entry, self._device_index, self._device_label)
 
     async def _update_solar_surplus(self, enabled: bool) -> None:
         """Update allow_solar_surplus for this device in config_entry.data."""
@@ -1399,6 +1421,7 @@ class ExcludedDeviceDynamicPowerControlSwitch(SwitchEntity):
 
         device = entry.data.get("excluded_devices", [])[index]
         friendly = excluded_device_name(hass, device)
+        self._device_label = friendly
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_dynamic_power_control"
@@ -1424,10 +1447,9 @@ class ExcludedDeviceDynamicPowerControlSwitch(SwitchEntity):
             return {}
         device = devices[self._device_index]
         return {
-            "power_sensor": device.get("power_sensor", ""),
+            **excluded_device_attributes(self.entry, self._device_index, self._device_label),
             "activity_sensor": device.get("activity_sensor", ""),
             "allow_solar_surplus": device.get("allow_solar_surplus", False),
-            "included_in_consumption": device.get("included_in_consumption", True),
         }
 
     async def _update_dynamic_power_control(self, enabled: bool) -> None:
@@ -1484,6 +1506,7 @@ class ExcludedDeviceCoverHomeSwitch(SwitchEntity):
 
         device = entry.data.get("excluded_devices", [])[index]
         friendly = excluded_device_name(hass, device)
+        self._device_label = friendly
 
         self._attr_has_entity_name = True
         self._attr_translation_key = "excluded_device_cover_home"
@@ -1509,7 +1532,7 @@ class ExcludedDeviceCoverHomeSwitch(SwitchEntity):
             return {}
         device = devices[self._device_index]
         return {
-            "power_sensor": device.get("power_sensor", ""),
+            **excluded_device_attributes(self.entry, self._device_index, self._device_label),
             "allow_solar_surplus": device.get("allow_solar_surplus", False),
         }
 
@@ -2328,9 +2351,40 @@ class PriceThresholdEnabledSwitch(SwitchEntity):
         # Missing key: legacy entries were manual iff a value was set.
         return bool(self.entry.data.get(self._conf_key, self.entry.data.get(self._value_key) is not None))
 
+    def _starting_value(self) -> float | None:
+        """A first value for a manual threshold that was never set.
+
+        Turning manual on with nothing stored would change nothing and leave
+        the box empty. Today's average price is what the discharge floor falls
+        back to anyway; it is kept on the right side of the sibling threshold
+        (charge ceiling <= discharge floor, #408). None without prices.
+        """
+        controller = (
+            (getattr(self.hass, "data", None) or {}).get(DOMAIN, {})
+            .get(self.entry.entry_id, {})
+            .get("controller")
+        )
+        average = getattr(controller, "_dp_daily_avg_price", None)
+        if average is None:
+            return None
+        value = round(float(average), 3)
+        if self._kind == "charge":
+            floor = effective_price_threshold(
+                self.entry.data, CONF_DISCHARGE_PRICE_THRESHOLD, CONF_DISCHARGE_PRICE_THRESHOLD_ENABLED
+            )
+            return value if floor is None else min(value, floor)
+        ceiling = effective_price_threshold(
+            self.entry.data, CONF_MAX_PRICE_THRESHOLD, CONF_MAX_PRICE_THRESHOLD_ENABLED
+        )
+        return value if ceiling is None else max(value, ceiling)
+
     def _set_enabled(self, enabled: bool) -> None:
         new_data = dict(self.entry.data)
         new_data[self._conf_key] = enabled
+        if enabled and new_data.get(self._value_key) is None:
+            start = self._starting_value()
+            if start is not None:
+                new_data[self._value_key] = start
         self.hass.config_entries.async_update_entry(self.entry, data=new_data)
         _LOGGER.info("Dynamic pricing %s price threshold %s",
                      self._kind, "MANUAL" if enabled else "AUTOMATIC")
@@ -2350,6 +2404,97 @@ class PriceThresholdEnabledSwitch(SwitchEntity):
             "manufacturer": "Omnibattery",
             "model": "Multi-Battery System",
         }
+
+
+class ConfigNumberDefaultSwitch(SwitchEntity):
+    """ON while a setting has no stored value, so it follows its default.
+
+    A number entity cannot be cleared from the UI. ON removes the stored value:
+    the setting is its default again and follows it, e.g. the solar safety
+    margin (5 % of the fleet) when a battery is added or removed. OFF stores the
+    value in use as a fixed one. Moving the slider stores a value too, which
+    turns this OFF. A manual value is not kept.
+    """
+
+    _suffix = "use_default"
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller, definition: dict) -> None:
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+        self._definition = definition
+        self._key = definition["key"]
+        name = f"{self._key}_{self._suffix}"
+        self._attr_has_entity_name = True
+        self._attr_translation_key = name
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}{name}"
+        self.entity_id = system_entity_id("switch", name)
+        self._attr_icon = definition.get("icon")
+        self._attr_should_poll = False
+
+    async def async_added_to_hass(self) -> None:
+        """Follow the slider: setting it stores a value, which turns this off."""
+        self.async_on_remove(self.entry.add_update_listener(self._handle_entry_update))
+
+    async def _handle_entry_update(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def is_on(self) -> bool:
+        return self._key not in self.entry.data
+
+    def _store(self, new_data: dict) -> None:
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        self.controller.update_pd_parameters()
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs) -> None:
+        new_data = dict(self.entry.data)
+        new_data.pop(self._key, None)
+        self._store(new_data)
+        _LOGGER.info("%s follows its default again", self._key)
+
+    def _value_in_use(self):
+        """What the setting is while it follows its default, in stored units."""
+        return config_number_default(self.hass, self.entry, self._definition)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        new_data = dict(self.entry.data)
+        new_data[self._key] = self._value_in_use()
+        self._store(new_data)
+        _LOGGER.info("%s fixed at %s", self._key, new_data[self._key])
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "marstek_venus_system")},
+            "name": "Omnibattery System",
+            "manufacturer": "Omnibattery",
+            "model": "Multi-Battery System",
+        }
+
+
+class RoundTripEfficiencyMeasuredSwitch(ConfigNumberDefaultSwitch):
+    """ON while the round-trip efficiency follows the batteries' measured value.
+
+    It replaces a hidden rule: a stored 0.85 (the default) used to mean "use
+    the measured value", so the slider showed 0.85 while about 0.82 was used
+    and a fixed 0.85 could not be set. Now no stored value means measured, and
+    OFF fixes the value in use.
+    """
+
+    _suffix = "use_measured"
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        super().__init__(
+            hass,
+            entry,
+            controller,
+            {"key": CONF_ROUND_TRIP_EFFICIENCY, "icon": "mdi:battery-sync", "default": None},
+        )
+
+    def _value_in_use(self):
+        return round(effective_round_trip_efficiency(self.controller)[0], 2)
 
 
 class SmartPredischargeSwitch(SwitchEntity):
