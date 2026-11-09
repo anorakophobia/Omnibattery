@@ -105,9 +105,32 @@ def test_the_discharge_floor_hides_with_its_feature():
     body = body[: body.index("_hourlyWarnEl()")]
     # every switch on the way up must be on, and each of them re-checks the card
     assert "dep = parent.item.dep;" in body
-    assert 'd.ids.every((id) => (this._hass.states[id] || {}).state === "on")' in body
+    assert "const shown = d.ids.every(on);" in body
     assert "w.depRefresh = refreshDeps;" in body
     assert "if (w.depRefresh) w.depRefresh();" in panel
+
+
+@pytest.mark.parametrize(
+    ("key", "text"),
+    [("max_price_threshold", "valAutoCharge"), ("discharge_price_threshold", "valAutoDischarge")],
+)
+def test_a_threshold_on_automatic_says_so(key, text):
+    # With its manual switch off the slider hides; an "Automatic" line takes
+    # its place (only while every switch above that one is on).
+    panel = PANEL.read_text(encoding="utf-8")
+    start = panel.index('tk: "diagPredictive"')
+    card = panel[start : panel.index('tk: "diagChargeDelay"', start)]
+    row = re.search(rf'\{{ key: "{key}",[^}}]*\}}', card).group(0)
+    assert f'auto: "{text}"' in row
+    assert panel.count(f"{text}: ") == 6
+
+    body = panel[panel.index("_renderSysSections(defs, store, empty) {") :]
+    body = body[: body.index("_hourlyWarnEl()")]
+    assert "const auto = r.item.auto ? this._sysAutoLine(nodes[0], r.item) : null;" in body
+    assert "gatedNodes.push(...nodes, ...(auto || []));" in body
+    assert "const autoShown = !shown && d.ids.slice(1).every(on);" in body
+    assert 'for (const n of d.auto || []) n.classList.toggle("sub-off", !autoShown);' in body
+    assert "val.textContent = this._t(item.auto);" in panel
 
 
 @pytest.mark.parametrize(
