@@ -24,7 +24,7 @@ A weekly full charge gives a lithium iron phosphate (LFP) battery regular time a
 
 With predictive charging, changing the day or turning the feature on or off re-plans on the next control cycle; no **Re-evaluate** is needed.
 
-![Configure the weekly full charge day and solar delay](../assets/screenshots/configuration/advanced-weekly-full-charge-config.png){ width="650" style="display: block; margin: 0 auto;"}
+![The Weekly Full Charge card: switch, day and status](../assets/screenshots/configuration/advanced-weekly-full-charge-config.png){ width="485" style="display: block; margin: 0 auto;"}
 
 ## What you will see
 
