@@ -60,7 +60,8 @@ LABEL = {
 
 
 def _per_kwh(value):
-    return f"{value:.2f} per kWh"
+    # The panel puts the slider's unit there (€/kWh or CHF/kWh).
+    return f"{value:.2f} {{unit}}"
 
 
 def _pct(value):
@@ -225,3 +226,18 @@ def test_a_settings_button_shows_its_tooltip():
     assert "btn.title = help" in branch
     assert "_showInfoPopover(info, help)" in branch
     assert _help("de")["reevaluate_dynamic_pricing"]
+
+
+def test_a_per_kwh_default_shows_the_slider_s_unit():
+    # The tooltip and the slider name the same unit: "Default: 0.05 €/kWh".
+    panel = PANEL.read_text(encoding="utf-8")
+    start = panel.index("_help(key, unit) {")
+    body = panel[start : panel.index("\n  }", start)]
+    assert '.replace("{unit}", unit || "/kWh")' in body
+    row = panel[panel.index("// static options-flow help (desktop hover title") :]
+    assert "this._help(item.key, state && state.attributes && state.attributes.unit_of_measurement)" in row[:300]
+    for lang in LANGS:
+        for key in ("discharge_reserve_min_saving", "surplus_hold_min_saving", "negative_injection_threshold"):
+            text = _help(lang)[key]
+            assert text.endswith(" {unit}."), (lang, key)
+            assert "kWh." not in text.rsplit(LABEL[lang], 1)[-1], (lang, key)

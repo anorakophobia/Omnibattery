@@ -130,7 +130,7 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
 
     Esta función opcional no controla un inversor solar. Encuentra periodos donde el precio de inyección es igual o inferior a **Umbral de precio de inyección negativo** y el excedente solar previsto supera el consumo de la vivienda. Antes del primer periodo de riesgo, selecciona los periodos elegibles de mayor valor para predescargar hasta que exista suficiente espacio de batería, sujeto a suelos de SOC, reservas, límites de potencia y bloqueos.
 
-    **Umbral de precio de inyección negativo** es por defecto 0,00 por kWh. **Predescarga: SOC más bajo** añade un suelo; por defecto es 20%, mientras que un valor de 0 usa los suelos existentes de las baterías. Ambos aparecen en la tarjeta solo mientras **Predescarga inteligente** está activada. Los periodos de riesgo se agrupan en bloques de aproximadamente una hora para reducir cambios repetidos.
+    **Umbral de precio de inyección negativo** es por defecto 0,00 €/kWh. **Predescarga: SOC más bajo** añade un suelo; por defecto es 20%, mientras que un valor de 0 usa los suelos existentes de las baterías. Ambos aparecen en la tarjeta solo mientras **Predescarga inteligente** está activada. Los periodos de riesgo se agrupan en bloques de aproximadamente una hora para reducir cambios repetidos.
 
     La exportación deliberada usa la potencia de descarga propia de la flota, limitada por **Límites de Potencia del Sistema** cuando están activados; no hay un ajuste de potencia de exportación aparte.
 
@@ -146,7 +146,7 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
 
     Fuera de los periodos seleccionados añade el bloqueo de carga `surplus_price_hold`. La carga de batería se limita a 0 W y el excedente se exporta, mientras que la descarga de batería para autoconsumo sigue disponible.
 
-    La retención se libera en un periodo de absorción seleccionado, tras el plazo solar, una vez alcanzado el objetivo, cuando los periodos restantes no pueden cubrir el objetivo o cuando el mejor ahorro restante es inferior a **Ahorro mínimo de retención de excedente**. Ese control tiene por defecto 0,02 moneda/kWh. El objetivo sigue el SOC en vivo en cada ciclo, y el plan se reconstruye cada cinco minutos y durante las reconstrucciones normales de Precio dinámico.
+    La retención se libera en un periodo de absorción seleccionado, tras el plazo solar, una vez alcanzado el objetivo, cuando los periodos restantes no pueden cubrir el objetivo o cuando el mejor ahorro restante es inferior a **Ahorro mínimo de retención de excedente**. Ese control tiene por defecto 0,02 €/kWh (CHF/kWh con CKW). El objetivo sigue el SOC en vivo en cada ciclo, y el plan se reconstruye cada cinco minutos y durante las reconstrucciones normales de Precio dinámico.
 
     La falta de precios, previsión, SOC/capacidad utilizable o entradas finitas libera la retención. El retraso de carga, un periodo activo de carga desde red, carga con precio negativo, antilimitación de producción, carga completa semanal, protección de picos, pausa de vehículo eléctrico, control manual, control de franjas horarias y una batería en su suelo de SOC también la liberan.
 
@@ -174,7 +174,7 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
 
     ### Reserva de descarga
 
-    Esta función opcional guarda energía almacenada para periodos de demanda doméstica más caros antes del próximo amanecer. Proyecta el perfil aprendido de demanda de 15 minutos y la solar esperada, permite que los periodos más caros reclamen solo la energía necesaria y reserva reclamaciones que superan el precio actual en **Ahorro mínimo de reserva de descarga**. Ese control es una diferencia de precio por kWh, igual para cualquier tamaño de batería (nunca se multiplica por los kWh almacenados), y tiene por defecto 0,05 moneda/kWh.
+    Esta función opcional guarda energía almacenada para periodos de demanda doméstica más caros antes del próximo amanecer. Proyecta el perfil aprendido de demanda de 15 minutos y la solar esperada, permite que los periodos más caros reclamen solo la energía necesaria y reserva reclamaciones que superan el precio actual en **Ahorro mínimo de reserva de descarga**. Ese control es una diferencia de precio por kWh, igual para cualquier tamaño de batería (nunca se multiplica por los kWh almacenados), y tiene por defecto 0,05 €/kWh (CHF/kWh con CKW).
 
     El excedente solar esperado puede liberar parte de la reserva, pero solo cuando cabe físicamente en la batería. El excedente que **Retención de excedente por precio** planea exportar no recibe crédito. El planificador acredita el 75% del excedente esperado que cumple la condición para que la incertidumbre de previsión no libere toda la reserva antes de que llegue producción real.
 
