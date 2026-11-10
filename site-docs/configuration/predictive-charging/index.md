@@ -39,11 +39,26 @@ All three modes calculate whether energy is missing. The difference is who choos
 
 When grid charging is needed, Omnibattery targets only the calculated deficit instead of filling every battery to its maximum state of charge (SOC). In a multi-battery system, it shares that target according to each battery's available capacity. Reaching the grid-charge target does not block later solar surplus: the battery can continue in a solar-only state.
 
-Use **Guaranteed Minimum SOC** if the whole-day balance looks sufficient but the battery often reaches its minimum before solar production begins. The switch and number entity set a reserve that must be available before the expected solar start.
+Use **Guaranteed Minimum SOC** if the whole-day balance looks sufficient but the battery often reaches its minimum before solar production begins. The switch turns it on; its value (**Minimum SOC** on the card, default 20%) sets the reserve that must be available before the expected solar start.
 
-Use **Re-evaluate Predictive Charging** after a material forecast or setting change. In Dynamic Pricing it rebuilds the remaining schedule immediately. In Time Slot mode it forces a fresh decision on the next control cycle inside an active charging window; pressing it outside a window does not open one. Real-Time Price has no button because it decides again on every control cycle.
+A setting changed on the predictive-charging card re-plans on the next control cycle by itself. Use **Re-evaluate Predictive Charging** after a change outside Omnibattery, such as a corrected solar forecast or a new price source. In Dynamic Pricing it rebuilds the remaining schedule immediately. In Time Slot mode it forces a fresh decision on the next control cycle inside an active charging window; pressing it outside a window does not open one. Real-Time Price has no button because it decides again on every control cycle.
 
 Turn off **Predictive Charging** to pause all predictive grid charging and its Dynamic Pricing subfeatures.
+
+### The predictive-charging card
+
+The card in the Omnibattery **Control** tab has one group per feature, separated by a line: the switch, its settings and its status row. The order follows the money: the base (switch, notifications, status), the solar safety margin, the guaranteed minimum SOC, the charge price, the discharge price, then the discharge reserve, High-Price Sale, Surplus Price Hold and smart pre-discharge, and the re-evaluate button.
+
+![The predictive charging card with Advanced on](../../assets/screenshots/configuration/predictive-charging/predictive-charging-card.png){ width="485" style="display: block; margin: 0 auto;" }
+
+- A feature's settings show only while the feature is on; the discharge price floor and its manual switch follow **Price-Based Discharge**.
+- **Advanced** on the card header shows the fine-tuning settings; with it off, each feature keeps its switch and status.
+- Every setting's tooltip ends with its default, for example "Default: off." or "Default: 0.02 €/kWh.".
+- Sliders for a price per kWh cover the usual range; type a value to go beyond it.
+
+### Solar Forecast Safety Margin
+
+**Solar Forecast Safety Margin** is subtracted once from expected solar. By default it is 5% of the fleet's total capacity, counting batteries that report their own capacity (a Marstek over Modbus, a Zendure or Hoymiles left at 0 for detection). While its **use default** switch is on, it follows the fleet when batteries are added or removed, and the slider is tagged *default*. Moving the slider sets a fixed value and turns the switch off; turning it on again discards that value.
 
 ## If it does not work
 
@@ -51,10 +66,10 @@ Turn off **Predictive Charging** to pause all predictive grid charging and its D
 |---|---|---|
 | No grid charge is planned | Stored energy and expected solar already cover demand | **Predictive Charging Active** and its decision attributes |
 | Cheap periods appear but charging does not start | The calendar is informational, the quota is already met, or a safety/control rule is active | `charging_needed`, the active mode page, battery SOC limits, and **Integration Status** |
-| The plan reports an energy shortfall | Eligible periods cannot deliver enough energy before it is needed | Charging power, battery capacity, price ceiling, configured windows, and physical blockers |
+| The plan reports an energy shortfall | Eligible periods cannot deliver enough energy before it is needed | Charging power, battery capacity, charge price ceiling, configured windows, and physical blockers |
 | The battery charges too much or too little | The solar or household-demand estimate does not match the remaining day | Forecast sensor type, consumption profile coverage, and **Solar Forecast Safety Margin** |
 | Charging pauses while household load rises | Contracted-power, phase, or capacity protection is preserving the import limit | [Capacity protection](../../features/peak-shaving.md) and [Main grid sensor](../main-sensor.md) |
-| A setting change has no immediate effect | The active plan has not yet been rebuilt | Press **Re-evaluate Predictive Charging** where available |
+| A change outside Omnibattery has no effect yet | A corrected forecast or another price source has not been planned in | Press **Re-evaluate Predictive Charging** where available; settings on the card apply by themselves |
 
 ??? "Advanced details"
     ### Energy decision and charge target
@@ -80,7 +95,7 @@ Turn off **Predictive Charging** to pause all predictive grid charging and its D
 
     In a multi-battery fleet, the grid target is distributed in proportion to each battery's gap to its configured maximum SOC. Dynamic Pricing and Time Slot can also assign a quota to each period and transfer missed energy only to later periods that still meet its deadline.
 
-    **Solar Forecast Safety Margin** is subtracted from expected solar once. New installations default to approximately 5% of total configured battery capacity; if capacity is unavailable during setup, the fallback is no margin.
+    **Solar Forecast Safety Margin** is subtracted from expected solar once; see [Solar Forecast Safety Margin](#solar-forecast-safety-margin) for its default. Before the batteries have reported their capacity, the default is no margin.
 
     ### Household demand during a charging slot
 
