@@ -53,7 +53,7 @@ The card in the Omnibattery **Control** tab has one group per feature, separated
 
 - A feature's settings show only while the feature is on; the discharge price floor and its manual switch follow **Price-Based Discharge**.
 - **Advanced** on the card header shows the fine-tuning settings; with it off, each feature keeps its switch and status.
-- Every setting's tooltip ends with its default, for example "Default: off." or "Default: 0.02 per kWh.".
+- Every setting's tooltip ends with its default, for example "Default: off." or "Default: 0.02 €/kWh.".
 - Sliders for a price per kWh cover the usual range; type a value to go beyond it.
 
 ### Solar Forecast Safety Margin

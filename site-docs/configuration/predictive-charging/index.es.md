@@ -53,7 +53,7 @@ La tarjeta de la pestaña **Control** de Omnibattery tiene un grupo por función
 
 - Los ajustes de una función aparecen solo mientras la función está activada; el suelo de precio de descarga y su interruptor manual siguen a **Descarga basada en precio**.
 - **Avanzado** en la cabecera de la tarjeta muestra los ajustes finos; desactivado, cada función conserva su interruptor y su estado.
-- La ayuda de cada ajuste termina con su valor por defecto, por ejemplo "Por defecto: desactivado." o "Por defecto: 0,02 por kWh.".
+- La ayuda de cada ajuste termina con su valor por defecto, por ejemplo "Por defecto: desactivado." o "Por defecto: 0,02 €/kWh.".
 - Los controles deslizantes de un precio por kWh cubren el rango habitual; escribe un valor para ir más allá.
 
 ### Margen de seguridad de previsión solar

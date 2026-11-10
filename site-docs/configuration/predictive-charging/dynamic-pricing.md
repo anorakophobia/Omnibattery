@@ -130,7 +130,7 @@ Optional controls in the **Control** tab solve different problems:
 
     This opt-in feature does not control a solar inverter. It finds periods where the feed-in price is at or below **Negative Feed-in Price Threshold** and forecast solar surplus exceeds household consumption. Before the first risk period, it selects the most valuable eligible periods for pre-discharge until enough battery space exists, subject to SOC floors, reserves, power limits, and blockers.
 
-    **Negative Feed-in Price Threshold** defaults to 0.00 per kWh. **Pre-discharge Lowest SOC** adds a floor; it defaults to 20%, while a value of 0 uses the batteries’ existing floors. Both show on the card only while **Smart Pre-discharge** is on. Risk periods are grouped into approximately one-hour blocks to reduce repeated switching.
+    **Negative Feed-in Price Threshold** defaults to 0.00 €/kWh. **Pre-discharge Lowest SOC** adds a floor; it defaults to 20%, while a value of 0 uses the batteries’ existing floors. Both show on the card only while **Smart Pre-discharge** is on. Risk periods are grouped into approximately one-hour blocks to reduce repeated switching.
 
     Deliberate export uses the fleet’s own discharge power, capped by **System Power Limits** when they are on; there is no separate export-power setting.
 
@@ -146,7 +146,7 @@ Optional controls in the **Control** tab solve different problems:
 
     Outside selected periods it adds the `surplus_price_hold` charge blocker. Battery charging clamps to 0 W and surplus exports, while battery discharge for self-consumption remains available.
 
-    The hold releases in a selected absorption period, after the solar deadline, once the target is met, when the remaining periods cannot cover the target, or when the best remaining saving is below **Surplus Hold Minimum Saving**. That control defaults to 0.02 currency/kWh. The target follows live SOC every cycle, and the plan is rebuilt every five minutes and during the normal Dynamic Pricing rebuilds.
+    The hold releases in a selected absorption period, after the solar deadline, once the target is met, when the remaining periods cannot cover the target, or when the best remaining saving is below **Surplus Hold Minimum Saving**. That control defaults to 0.02 €/kWh (CHF/kWh with CKW). The target follows live SOC every cycle, and the plan is rebuilt every five minutes and during the normal Dynamic Pricing rebuilds.
 
     Missing prices, forecast, usable SOC/capacity, or finite inputs releases the hold. Charge delay, an active grid-charge period, negative-price charging, anti-curtailment, weekly full charge, peak shaving, electric-vehicle pause, manual control, operating-time ownership, and a battery on its SOC floor also release it.
 
@@ -174,7 +174,7 @@ Optional controls in the **Control** tab solve different problems:
 
     ### Discharge Reserve
 
-    This opt-in feature saves stored energy for more expensive household-demand periods before the next sunrise. It projects the learned 15-minute demand profile and expected solar, lets the dearest periods claim only the energy they need, and reserves claims that exceed the current price by **Discharge Reserve Minimum Saving**. That control is a price gap per kWh, the same for any battery size (never multiplied by the stored kWh), and defaults to 0.05 currency/kWh.
+    This opt-in feature saves stored energy for more expensive household-demand periods before the next sunrise. It projects the learned 15-minute demand profile and expected solar, lets the dearest periods claim only the energy they need, and reserves claims that exceed the current price by **Discharge Reserve Minimum Saving**. That control is a price gap per kWh, the same for any battery size (never multiplied by the stored kWh), and defaults to 0.05 €/kWh (CHF/kWh with CKW).
 
     Expected solar surplus can release part of the reserve, but only when it can physically fit in the battery. Surplus that **Surplus Price Hold** plans to export receives no credit. The planner credits 75% of qualifying expected surplus so forecast uncertainty cannot release the full reserve before actual production arrives.
 
