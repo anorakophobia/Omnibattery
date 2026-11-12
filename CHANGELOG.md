@@ -5,6 +5,7 @@
 ### Fixed
 
 - **A battery tapering on cell voltage is no longer marked non-responsive below 99% SOC**: the top-of-charge taper grace only started at 99% SOC, but a BMS that tapers on cell voltage is below 10% of the command earlier. A Zendure SolarFlow 2400 AC+ fell to 110–190 W of a 2300–2400 W command from 97% and was excluded twice for 5 minutes on its way to 100%. The grace now also opens once the top cell is in the taper zone (3.48 V), the band that already arms the BMS-cutoff detector, with the same 45-minute bound.
+- **Discharge Reserve keeps energy for the evening when the sun cannot refill the battery**: the reserve ended its plan where the sun takes over from the house (or at sunrise), and kept the evening only on a day the sun never covers the house (#840). A dull November day whose sun covers the house for a few hours but puts about 1 kWh into 11.7 kWh of room cut the evening off all the same, and a sun taking over only at noon kept the sunrise bound. The reserve now also plans to the evening (in the evening: to the charge planner's extended horizon) when the sun's surplus the battery can take is less than its free space now: nothing held is then pushed out by the PV. A weekly full charge that fills the battery first keeps the old bound. The Daily operation timeline gets the same horizon, so it shows the midday sun held for the evening peak instead of spent before it.
 
 ## [1.6.1b2] - 2026-11-11
 
