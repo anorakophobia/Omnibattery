@@ -11810,7 +11810,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "(high-price switches merged into the high_price_sale select)",
         )
 
-    if entry.version < 17:
+    # ha-install only: this fork's 1.6.1 builds (ha.36-ha.40) used v17 for the
+    # round-trip efficiency step, so their entries are at 17 without upstream's
+    # v17 below. The limit key is still stored then; fold it now.
+    if entry.version < 17 or "capacity_protection_limit" in new_data:
         from homeassistant.helpers import entity_registry as er
         from .infra.entity_naming import SYSTEM_UNIQUE_ID_PREFIX
 
