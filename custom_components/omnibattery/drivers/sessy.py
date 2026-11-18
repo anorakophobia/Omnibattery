@@ -14,7 +14,16 @@ from typing import Optional
 
 import aiohttp
 
-from .base import BatteryDriver, DriverCapabilities, ReadGroup, SetpointResult, TelemetrySnapshot
+from .base import (
+    BatteryDriver,
+    DriverCapabilities,
+    DriverContext,
+    DriverTraits,
+    ReadGroup,
+    SetpointResult,
+    TelemetrySnapshot,
+)
+from .sessy_flow import SESSY_SETUP
 
 _LOGGER = logging.getLogger(__name__)
 _HTTP_TIMEOUT = aiohttp.ClientTimeout(total=10)
@@ -51,6 +60,26 @@ _DEVICE_INFO_KEYS = frozenset({"wifi_signal_strength", "software_version"})
 
 class SessyLocalDriver(BatteryDriver):
     """Poll and control one Sessy dongle using its documented local API."""
+
+    BRAND = "sessy"
+    SETUP = SESSY_SETUP
+    TRAITS = DriverTraits(supports_voltage_taper=False, keeps_stored_taper_flag=True, fixed_power_envelope=True, ip_addressed=True,
+                    capacity_field="required", min_soc_range=(0, 30, 5))
+    LABEL = "Sessy"
+    MANUFACTURER = "Sessy"
+    DEFAULT_MODEL = "Sessy"
+    REDACT_KEYS = frozenset({"username", "password"})
+
+    @classmethod
+    def from_config(cls, battery_config, context: DriverContext) -> "SessyLocalDriver":
+        return cls(
+            battery_config["host"],
+            port=battery_config["port"],
+            username=battery_config.get("username", ""),
+            password=battery_config.get("password", ""),
+            max_charge_power_w=context.max_charge_power_w,
+            max_discharge_power_w=context.max_discharge_power_w,
+        )
 
     def __init__(
         self,
@@ -97,6 +126,9 @@ class SessyLocalDriver(BatteryDriver):
     def capabilities(self) -> DriverCapabilities: return self._capabilities
     @property
     def model_label(self) -> Optional[str]: return "Sessy"
+    @property
+    def configuration_url(self) -> Optional[str]: return self._base_url + "/"
+    def software_version(self, data: dict) -> Optional[str]: return data.get("software_version")
     @property
     def connected(self) -> bool: return self._connected
     @property

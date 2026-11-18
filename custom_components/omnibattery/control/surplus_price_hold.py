@@ -30,8 +30,10 @@ from datetime import datetime, timedelta
 from time import monotonic
 from typing import TYPE_CHECKING, Any
 
+from ..infra.clock import local_now
 from ..const import PREDICTIVE_MODE_DYNAMIC_PRICING
 from ..pricing.curtailment import distribute_solar_forecast, estimate_consumption_by_slot
+from ..pricing.plan_inputs import energy_over
 from ..pricing.surplus_absorption import (
     AbsorptionPlan,
     STATUS_DISABLED,
@@ -94,7 +96,7 @@ class SurplusPriceHoldManager:
 
     def _now(self) -> datetime:
         """Return local wall-clock time, isolated for deterministic tests."""
-        return datetime.now()
+        return local_now()
 
     @property
     def plan(self) -> AbsorptionPlan | None:
@@ -364,19 +366,37 @@ class SurplusPriceHoldManager:
         if remaining_solar is None or remaining_load is None:
             return {}
 
-        # ``remaining_solar_kwh`` already ends at sunset, but
-        # ``remaining_consumption_kwh`` runs to midnight while the slots stop at
-        # the solar deadline. Spreading the evening and night load over daylight
-        # hours would erase the surplus that is actually there, so scale the
-        # load down to the daylight share first.
-        daylight_load = self._daylight_share(float(remaining_load), now, deadline)
-
         solar_by_slot = distribute_solar_forecast(
             slots, float(remaining_solar), fraction_fn, normalize_future=True
         )
-        load_by_slot = estimate_consumption_by_slot(
-            slots, daylight_load, None, normalize_future=True
+        # The household load follows the learned profile the planner uses; the
+        # flat spread below is only the fallback when no projection exists.
+        energy_projection = getattr(pricing, "energy_projection", None)
+        projection = (
+            energy_projection(now, max(slot.end for slot in slots))
+            if callable(energy_projection)
+            else None
         )
+        if projection is not None:
+            load_by_slot = {
+                slot: energy_over(
+                    projection.boundaries,
+                    projection.consumption_kwh,
+                    slot.start,
+                    slot.end,
+                )
+                for slot in slots
+            }
+        else:
+            # ``remaining_solar_kwh`` already ends at sunset, but
+            # ``remaining_consumption_kwh`` runs to midnight while the slots
+            # stop at the solar deadline. Spreading the evening and night load
+            # over daylight hours would erase the surplus that is actually
+            # there, so scale the load down to the daylight share first.
+            daylight_load = self._daylight_share(float(remaining_load), now, deadline)
+            load_by_slot = estimate_consumption_by_slot(
+                slots, daylight_load, None, normalize_future=True
+            )
         return {
             slot: max(
                 0.0,
@@ -408,10 +428,14 @@ class SurplusPriceHoldManager:
             return 0.0
         return remaining_load_kwh * (end_h - now_h) / (24.0 - now_h)
 
-    def _release_guard(self) -> str | None:
+    def _release_guard(self, *, for_plan: bool = False) -> str | None:
         """Return the first live reason the hold must not apply, if any.
 
         Ordered so the reason a user sees is the one they would name themselves.
+        ``for_plan`` (an export the 2.0.0 optimizer planned) skips two economic
+        guards the plan already weighed: the selected-slot one (it never exports
+        in a slot it charges, and the calendar also lists informational slots)
+        and the at-floor one (storing when empty is its own decision).
         """
         controller = self._controller
         pricing = getattr(controller, "_pricing_mgr", None)
@@ -427,7 +451,7 @@ class SurplusPriceHoldManager:
                 return GUARD_CHARGE_DELAY
 
         # A scheduled cheap grid-charging slot must not be suppressed.
-        if pricing is not None and pricing.is_in_dynamic_pricing_slot():
+        if not for_plan and pricing is not None and pricing.is_in_dynamic_pricing_slot():
             return GUARD_DYNAMIC_PRICING_SLOT
         if getattr(controller, "_current_price_slot_active", False):
             return GUARD_DYNAMIC_PRICING_SLOT
@@ -477,7 +501,7 @@ class SurplusPriceHoldManager:
         if self._manual_control_active():
             return GUARD_MANUAL
 
-        if self._at_soc_floor():
+        if not for_plan and self._at_soc_floor():
             return GUARD_SOC_FLOOR
 
         return None

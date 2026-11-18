@@ -33,10 +33,14 @@ from homeassistant.util import dt as dt_util, slugify
 from .base import (
     BatteryDriver,
     DriverCapabilities,
+    DriverContext,
+    LFP_CELL_VOLTAGE_PROFILE,
     ReadGroup,
     SetpointResult,
     TelemetrySnapshot,
 )
+from .esphome_flow import ESPHOME_SETUP
+from .marstek import slot_power_ceiling_by_version
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -396,6 +400,30 @@ NUMBER_DEFINITIONS: list[dict] = [
 class EsphomeEntityDriver(BatteryDriver):
     """Drives a Marstek battery through the LilyGo/ESPHome HA entities."""
 
+    BRAND = "esphome"
+    SETUP = ESPHOME_SETUP
+    LABEL = "Marstek via LilyGo RS485 (ESPHome)"
+    MANUFACTURER = "Marstek"
+    DEFAULT_MODEL = "Venus"
+
+    @classmethod
+    def slot_power_ceiling(cls, battery_config) -> Optional[int]:
+        # A Venus behind the bridge keeps the stored Marstek version table.
+        return slot_power_ceiling_by_version(battery_config)
+
+    @classmethod
+    def from_config(cls, battery_config, context: DriverContext) -> "EsphomeEntityDriver":
+        # Marstek behind a LilyGo RS485 bridge: telemetry/control go through the
+        # ESPHome integration's HA entities. host carries the ESPHome device
+        # registry id (stable identity for device_key / persistence);
+        # esphome_device_id is the explicit config field.
+        return cls(
+            context.hass,
+            battery_config.get("esphome_device_id") or battery_config["host"],
+            max_charge_power_w=context.max_charge_power_w,
+            max_discharge_power_w=context.max_discharge_power_w,
+        )
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -438,6 +466,7 @@ class EsphomeEntityDriver(BatteryDriver):
             # Venus E firmware floor, same as the direct Modbus v2 driver.
             min_charge_power_w=800,
             min_discharge_power_w=800,
+            cell_voltage_profile=LFP_CELL_VOLTAGE_PROFILE,  # publishes max_cell_voltage
         )
 
         self._definitions: dict[str, list[dict]] = {
@@ -840,6 +869,11 @@ class EsphomeEntityDriver(BatteryDriver):
             return await self._write_number(key, value)
         _LOGGER.debug("EsphomeEntityDriver: no control mapping for key %r", key)
         return False
+
+    def ac_register_power_w(self, data: dict):
+        # ``ac_power`` is +discharge / -charge; the query speaks +charge.
+        value = data.get("ac_power")
+        return None if value is None else -float(value)
 
     def net_power_from_data(self, data: dict):
         force = data.get("force_mode")

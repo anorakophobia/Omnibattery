@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.config_entries import SOURCE_RECONFIGURE
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from custom_components.omnibattery import drivers
@@ -29,7 +30,7 @@ from custom_components.omnibattery.drivers.indevolt import (
     SENSOR_DEFINITIONS,
     IndevoltDriver,
 )
-from custom_components.omnibattery.infra.indevolt_client import (
+from custom_components.omnibattery.drivers.indevolt_client import (
     REQUEST_SPEED_SLOT_S,
     SLOT_S,
     IndevoltAuthenticationError,
@@ -269,6 +270,7 @@ async def test_reconfigure_routes_indevolt_to_its_form(monkeypatch):
                              "port": 8080, "min_soc": 20}]},
     )
     flow = MarstekVenusConfigFlow()
+    flow.context = {"source": SOURCE_RECONFIGURE}
     flow.battery_index = 0
     flow._reconfigure_batteries = []
     flow._get_reconfigure_entry = lambda: entry
@@ -297,6 +299,7 @@ async def test_reconfigure_shows_and_keeps_the_request_speed(monkeypatch):
                "port": 8080, "indevolt_request_speed": "fast"}
     entry = SimpleNamespace(entry_id="test-entry", data={"batteries": [battery]})
     flow = MarstekVenusConfigFlow()
+    flow.context = {"source": SOURCE_RECONFIGURE}
     flow.battery_index = 0
     flow._reconfigure_batteries = []
     flow._get_reconfigure_entry = lambda: entry
@@ -311,12 +314,15 @@ async def test_reconfigure_shows_and_keeps_the_request_speed(monkeypatch):
     assert flow._reconfigure_batteries[0]["indevolt_request_speed"] == "conservative"
 
 
+_INDEVOLT_BATTERY = {
+    "name": "Garage Indevolt", "host": "192.0.2.50", "port": 8080, "brand": "indevolt",
+    "max_charge_power": 2400, "max_discharge_power": 2400, "max_soc": 100, "min_soc": 20,
+}
+
+
 def test_coordinator_builds_the_indevolt_driver(monkeypatch):
     monkeypatch.setattr(DataUpdateCoordinator, "__init__", lambda *_args, **_kwargs: None)
-    coordinator = MarstekVenusDataUpdateCoordinator(
-        MagicMock(), "Garage Indevolt", "192.0.2.50", 8080, "sensor.grid_power",
-        brand="indevolt", max_charge_power=2400, max_discharge_power=2400, min_soc=20,
-    )
+    coordinator = MarstekVenusDataUpdateCoordinator(MagicMock(), _INDEVOLT_BATTERY, "sensor.grid_power")
     driver = coordinator.driver
     assert isinstance(driver, IndevoltDriver)
     assert driver.capabilities.hardware_soc_cutoff is False
@@ -333,7 +339,11 @@ def test_coordinator_builds_the_indevolt_driver(monkeypatch):
 def test_the_device_page_shows_the_firmware_the_battery_reports():
     coordinator = SimpleNamespace(
         device_key="192.0.2.50_8080", name="Garage Indevolt", brand="indevolt",
-        driver=SimpleNamespace(model_label="SolidFlex 2000", serial="1"),
+        driver=SimpleNamespace(
+            model_label="SolidFlex 2000", serial="1", MANUFACTURER="Indevolt",
+            DEFAULT_MODEL="Indevolt", configuration_url=None,
+            software_version=lambda data: data.get("software_version"),
+        ),
         data={"software_version": "V1500.0B.0041"},
     )
     info = MarstekVenusDataUpdateCoordinator.battery_device_info.fget(coordinator)
@@ -350,9 +360,7 @@ def test_the_device_page_shows_the_firmware_the_battery_reports():
 def test_the_coordinator_hands_the_chosen_speed_to_the_driver(monkeypatch, speed, slot_s):
     monkeypatch.setattr(DataUpdateCoordinator, "__init__", lambda *_args, **_kwargs: None)
     coordinator = MarstekVenusDataUpdateCoordinator(
-        MagicMock(), "Garage Indevolt", "192.0.2.50", 8080, "sensor.grid_power",
-        brand="indevolt", max_charge_power=2400, max_discharge_power=2400, min_soc=20,
-        indevolt_request_speed=speed,
+        MagicMock(), {**_INDEVOLT_BATTERY, "indevolt_request_speed": speed}, "sensor.grid_power",
     )
     assert coordinator.driver._slot_s == slot_s
 
@@ -418,10 +426,7 @@ async def test_the_device_backed_min_soc_replaces_its_software_twin(monkeypatch)
     from custom_components.omnibattery.number import MarstekVenusNumber, SoftSocLimitNumber
 
     monkeypatch.setattr(DataUpdateCoordinator, "__init__", lambda *_args, **_kwargs: None)
-    coordinator = MarstekVenusDataUpdateCoordinator(
-        MagicMock(), "Garage Indevolt", "192.0.2.50", 8080, "sensor.grid_power",
-        brand="indevolt", max_charge_power=2400, max_discharge_power=2400, min_soc=20,
-    )
+    coordinator = MarstekVenusDataUpdateCoordinator(MagicMock(), _INDEVOLT_BATTERY, "sensor.grid_power")
     numbers = await _numbers_for(coordinator)
     ids = [n.unique_id for n in numbers]
     assert len(ids) == len(set(ids))
@@ -438,8 +443,13 @@ async def test_other_software_soc_brands_keep_both_sliders(monkeypatch):
 
     monkeypatch.setattr(DataUpdateCoordinator, "__init__", lambda *_args, **_kwargs: None)
     coordinator = MarstekVenusDataUpdateCoordinator(
-        MagicMock(), "Venus", "192.0.2.20", 502, "sensor.grid_power",
-        battery_version="v3", max_charge_power=2500, max_discharge_power=2500, min_soc=12,
+        MagicMock(),
+        {
+            "name": "Venus", "host": "192.0.2.20", "port": 502, "brand": "marstek",
+            "battery_version": "v3", "max_charge_power": 2500, "max_discharge_power": 2500,
+            "max_soc": 100, "min_soc": 12,
+        },
+        "sensor.grid_power",
     )
     assert coordinator.capabilities.hardware_soc_cutoff is False
     soft = [n for n in await _numbers_for(coordinator) if isinstance(n, SoftSocLimitNumber)]

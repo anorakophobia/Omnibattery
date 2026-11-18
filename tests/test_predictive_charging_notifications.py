@@ -18,6 +18,7 @@ Run without the Home Assistant runtime: stub hass/entry/controller objects.
 from __future__ import annotations
 
 import asyncio
+from collections import namedtuple
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -106,7 +107,6 @@ def _muted_manager(monkeypatch):
         "format_dynamic_pricing_notification",
         "format_slot_start_notification",
         "format_dp_pre_slot_reevaluation_notification",
-        "format_evening_recharge_notification",
         "format_predictive_notification_message",
     ):
         monkeypatch.setattr(
@@ -137,18 +137,101 @@ def test_every_evaluation_sender_is_muted(monkeypatch):
         await manager._send_dynamic_pricing_notification(decision_data={}, schedule=None)
         await manager._send_dynamic_pricing_slot_start_notification(object())
         await manager._send_dp_pre_slot_reevaluation_notification(object(), {})
-        await manager._send_evening_recharge_notification(1.0, [])
         await manager._send_predictive_charging_notification({})
 
     asyncio.run(_send_all())
     assert calls == []
 
-    # Unmuted, the same five senders post exactly five notifications with
+    # Unmuted, the same four senders post exactly four notifications with
     # their existing IDs (blueprints and user automations depend on them).
     controller.predictive_charging_notifications_enabled = True
     asyncio.run(_send_all())
     ids = [c[2]["notification_id"] for c in calls if c[1] == "create"]
-    assert ids == [EVAL_ID, EVAL_ID, EVAL_ID, EVENING_ID, EVAL_ID]
+    assert ids == [EVAL_ID, EVAL_ID, EVAL_ID, EVAL_ID]
+
+
+# Re-send only when the plan changes (#690)
+
+
+def _dedupe_manager(monkeypatch, title=lambda: "needed"):
+    manager, controller, calls = _muted_manager(monkeypatch)
+    monkeypatch.setattr(
+        engine_module.notifications,
+        "format_dynamic_pricing_notification",
+        lambda *a, **k: (title(), "message"),
+    )
+    controller.predictive_charging_notifications_enabled = True
+    return manager, calls
+
+
+_Slot = namedtuple("_Slot", "start end")
+
+
+def _plan(*slots):
+    """Schedule stub: slots is ((start, end), kwh) pairs."""
+    sl = [_Slot(s, e) for (s, e), _ in slots]
+    return SimpleNamespace(
+        selected_slots=sl,
+        slot_energy_targets_kwh={s: kwh for s, (_, kwh) in zip(sl, slots)},
+    )
+
+
+def _creates(calls):
+    return [c for c in calls if c[1] == "create"]
+
+
+def test_same_plan_new_live_values_notifies_once(monkeypatch):
+    manager, calls = _dedupe_manager(monkeypatch)
+
+    async def _run():
+        for soc in (40, 55):
+            await manager._send_dynamic_pricing_notification(
+                {"avg_soc": soc, "usable_energy_kwh": soc / 10}, _plan(((1, 2), 3.0))
+            )
+
+    asyncio.run(_run())
+    assert len(_creates(calls)) == 1
+
+
+@pytest.mark.parametrize(
+    "second",
+    [
+        lambda: _plan(((1, 2), 3.01)),
+        lambda: _plan(((1, 2), 3.0), ((5, 6), 1.0)),
+    ],
+)
+def test_changed_plan_notifies_again(monkeypatch, second):
+    manager, calls = _dedupe_manager(monkeypatch)
+
+    async def _run():
+        await manager._send_dynamic_pricing_notification({}, _plan(((1, 2), 3.0)))
+        await manager._send_dynamic_pricing_notification({}, second())
+
+    asyncio.run(_run())
+    assert len(_creates(calls)) == 2
+
+
+def test_changed_title_notifies_again(monkeypatch):
+    titles = iter(["needed", "not needed"])
+    manager, calls = _dedupe_manager(monkeypatch, title=lambda: next(titles))
+
+    async def _run():
+        await manager._send_dynamic_pricing_notification({}, None)
+        await manager._send_dynamic_pricing_notification({}, None)
+
+    asyncio.run(_run())
+    assert len(_creates(calls)) == 2
+
+
+def test_no_schedule_twice_notifies_once(monkeypatch):
+    manager, calls = _dedupe_manager(monkeypatch)
+
+    async def _run():
+        await manager._send_dynamic_pricing_notification({}, None)
+        await manager._send_dynamic_pricing_notification({}, None)
+
+    asyncio.run(_run())
+    assert len(_creates(calls)) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -253,3 +336,36 @@ def test_switch_absent_when_predictive_charging_never_configured():
     added: list = []
     asyncio.run(async_setup_entry(hass, entry, lambda ents: added.extend(ents)))
     assert not any(isinstance(e, PredictiveChargingNotificationsSwitch) for e in added)
+
+
+def test_changed_plan_orders_notify_again(monkeypatch):
+    """A plan that only changes its sales (or holds) is a new plan."""
+    manager, calls = _dedupe_manager(monkeypatch)
+    controller = manager._controller
+
+    async def _run():
+        for kw in (2.5, 2.5, 3.0):
+            controller._dp_plan_sales = {_Slot(7, 8): kw}
+            await manager._send_dynamic_pricing_notification({}, None)
+
+    asyncio.run(_run())
+    assert len(_creates(calls)) == 2
+
+
+
+def test_changed_room_orders_notify_again(monkeypatch):
+    """Smart Pre-Discharge's room orders are part of the plan, too."""
+    from custom_components.omnibattery.pricing.engine import PlanRoom
+
+    manager, calls = _dedupe_manager(monkeypatch)
+    controller = manager._controller
+    controller.predictive_charging_enabled = True
+    controller.predictive_charging_mode = "dynamic_pricing"
+
+    async def _run():
+        for kw in (2.5, 2.5, 1.25):
+            controller._dp_plan_room = PlanRoom({_Slot(7, 8): (kw, -1.0)}, frozenset(), {})
+            await manager._send_dynamic_pricing_notification({}, None)
+
+    asyncio.run(_run())
+    assert len(_creates(calls)) == 2

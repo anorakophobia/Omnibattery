@@ -38,6 +38,7 @@ from custom_components.omnibattery.config_flow import (
     _validate_phase_protection,
 )
 from custom_components.omnibattery.sensor import ThreePhaseProtectionSensor
+from tests.conftest import _FakeMarstekDriver
 
 
 class FakeStates:
@@ -53,6 +54,7 @@ class FakeCoordinator:
         self.name = name
         self.phase = phase
         self.data = {"battery_power": 0}
+        self.driver = _FakeMarstekDriver()
         self.max_charge_power = max_power
         self.max_discharge_power = max_power
         self.commanded_charge_power = 0
@@ -728,5 +730,7 @@ def test_a_lasting_degradation_is_reported_in_repairs(monkeypatch):
     limiter.hass.states._states["sensor.l1"] = _state(2.0, now=clock["now"])
     limiter.phase_snapshot(PHASE_L1)
     limiter.update_degraded_warning()
-    assert len(deleted) == 1
+    # The first healthy check of a run sweeps every phase (a persisted Repair
+    # from before a restart); the recovery then deletes the L1 issue itself.
+    assert deleted[-1][0][2].endswith(f"_{PHASE_L1}")
 

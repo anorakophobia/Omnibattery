@@ -34,6 +34,7 @@ FINGERPRINT = {
     "_predictive_min_soc_floor",
     "_predictive_min_soc_floor_enabled",
     "max_price_threshold",
+    "discharge_price_threshold",
     "min_arbitrage_margin",
     "round_trip_efficiency",
     "negative_injection_threshold",
@@ -42,7 +43,6 @@ FINGERPRINT = {
     "weekly_full_charge_day",
     "discharge_reserve_enabled",
     "capacity_protection_enabled",
-    "capacity_protection_limit",
     "max_contracted_power",
     "enable_system_power_limits",
     "system_max_charge_power",
@@ -67,10 +67,12 @@ LIVE = {
     "_weekly_full_charge_skip_delay",
     "capacity_protection_excluded_devices",
     "capacity_protection_soc_threshold",
+    # The 15-min window moves only the real-time cap; planners read the
+    # configured value (#506).
+    "grid_import_window_enabled",
     "charge_priority",
     "deadband",
     "direction_hysteresis",
-    "discharge_price_threshold",
     "discharge_reserve_min_saving",
     "high_price_discharge_enabled",
     "high_price_discharge_max_power_w",
@@ -169,6 +171,52 @@ def test_a_planning_setting_moves_the_fingerprint(name):
     before = _fingerprint(ctrl)
     setattr(ctrl, field, 1)
     assert _fingerprint(ctrl) != before
+
+
+def test_price_based_discharge_control_moves_the_fingerprint():
+    # The planner idles the battery in every interval priced at or below the
+    # discharge threshold while this switch is on. Its flag is an annotated
+    # assignment read through a property, so the scan above does not see it.
+    ctrl = _ctrl(dp_price_discharge_control=False)
+    before = _fingerprint(ctrl)
+    ctrl.dp_price_discharge_control = True
+    assert _fingerprint(ctrl) != before
+
+
+def _slot(**overrides):
+    slot = {
+        "start_time": "22:00:00",
+        "end_time": "06:00:00",
+        "days": ["mon", "tue"],
+        "enabled": True,
+        "battery_scope": "all",
+    }
+    slot.update(overrides)
+    return slot
+
+
+def _ctrl_with_slots(slots):
+    return _ctrl(
+        config_entry=SimpleNamespace(data={"no_discharge_time_slots": slots})
+    )
+
+
+def test_a_fleet_wide_no_discharge_slot_moves_the_fingerprint():
+    # The planner projects the battery idle inside these windows, and the
+    # slot's own switch only updates the entry.
+    ctrl = _ctrl_with_slots([_slot()])
+    before = _fingerprint(ctrl)
+    ctrl.config_entry.data["no_discharge_time_slots"] = [_slot(enabled=False)]
+    assert _fingerprint(ctrl) != before
+
+
+def test_a_single_battery_no_discharge_slot_leaves_the_fingerprint():
+    ctrl = _ctrl_with_slots([_slot(battery_scope="battery_1")])
+    before = _fingerprint(ctrl)
+    ctrl.config_entry.data["no_discharge_time_slots"] = [
+        _slot(battery_scope="battery_1", enabled=False, start_time="23:00:00")
+    ]
+    assert _fingerprint(ctrl) == before
 
 
 @pytest.mark.parametrize("name", sorted(LIVE | OWN_PATH | RELOAD))

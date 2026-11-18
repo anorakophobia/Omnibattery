@@ -30,9 +30,10 @@ from astral.sun import noon as astral_noon, sunrise as astral_sunrise, sunset as
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from ..const import DEFAULT_BASE_CONSUMPTION_KWH, DOMAIN
+from ..infra.clock import local_now
+from ..const import DEFAULT_BASE_CONSUMPTION_KWH, DOMAIN, MISSING_DAY_FLEET_SHARE
 from ..infra.entity_naming import is_omnibattery_solar_entity
-from ..drivers.base import DELIVERED_AC_POWER_KEY, has_connected_mppt_pv
+from ..drivers.base import AC_PORT_FIRST, has_connected_mppt_pv, mppt_power_keys
 from .backfill import BackfillToken, RecorderBackfillCoordinator, local_day_bounds
 from .consumption_profile import (
     ConsumptionForecast,
@@ -80,20 +81,13 @@ def coordinator_ac_power_w(coordinator: Any) -> float | None:
     data = getattr(coordinator, "data", None)
     if not data:
         return None
-    value = data.get(DELIVERED_AC_POWER_KEY)
-    if value is not None:
-        value = -value
-    else:
-        value = data.get("ac_power")
-    if value is None:
-        battery_power = data.get("battery_power")
-        if battery_power is None:
-            return None
-        value = -battery_power
     try:
-        parsed = float(value)
+        contribution = coordinator.driver.ac_contribution_w(data, AC_PORT_FIRST)
     except (TypeError, ValueError):
         return None
+    if contribution is None:
+        return None
+    parsed = -contribution
     return parsed if math.isfinite(parsed) else None
 
 
@@ -130,12 +124,48 @@ def home_balance_is_suspicious(
     return balance_w < HOME_CONSUMPTION_MIN_BALANCE_W
 
 
+# 15-minute billing window (#506 step 4).
+_WINDOW_S = 900.0
+_WINDOW_GUARD_S = 30.0  # meter clock drift tolerated at a quarter boundary
+
+
+def grid_import_window_default(country: str | None) -> bool:
+    """Default of the window switch: on where the bill is a 15-min mean (BE)."""
+    return country == "BE"
+
+
+def grid_window_cap_w(
+    cap_w: float, quarter_start: datetime, sample_at: datetime, import_kwh: float
+) -> float:
+    """Import allowed for the rest of the quarter so its mean stays <= ``cap_w``.
+
+    Within the guard band at either end it never exceeds ``cap_w``: the
+    meter's own quarter may be a few seconds off ours. Past the quarter end
+    (a stale sample) the configured value holds.
+    """
+    elapsed = (sample_at - quarter_start).total_seconds()
+    remaining = _WINDOW_S - elapsed
+    if remaining <= 0:
+        return cap_w
+    allowed = max(0.0, (cap_w * _WINDOW_S - import_kwh * 3.6e6) / remaining)
+    if elapsed < _WINDOW_GUARD_S or remaining < _WINDOW_GUARD_S:
+        allowed = min(allowed, cap_w)
+    return allowed
+
+
 class ConsumptionTracker:
     """Manages consumption history, accumulators and solar timing."""
 
     # Re-entrancy guard for ``_vacation_baseline_kw``; see the note there.
     # Class-level so instances built without ``__init__`` still have it.
     _vacation_baseline_running = False
+
+    # Grid import of the current local quarter (#506). Not persisted: after a
+    # restart the quarter is untrusted until the next boundary.
+    window_quarter: datetime | None = None
+    window_import_kwh: float = 0.0
+    window_sample_at: datetime | None = None
+    window_valid: bool = False
 
     def __init__(
         self,
@@ -468,7 +498,7 @@ class ConsumptionTracker:
                        datetime.combine(day + timedelta(days=1), time.min, tzinfo=dt_util.now().tzinfo))]
         if history:
             return sum(history) / len(history) / 24.0, "daily_history"
-        return DEFAULT_BASE_CONSUMPTION_KWH / 24.0, "default"
+        return self._missing_day_kwh() / 24.0, "default"
 
     def vacation_diagnostics(self) -> dict[str, Any]:
         baseline_kw, source = self._vacation_baseline_kw()
@@ -941,9 +971,7 @@ class ConsumptionTracker:
             mppt_w = 0.0
             seen = False
             pv_keys = (
-                ("mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power")
-                if has_mppt
-                else ("solar_power",)
+                mppt_power_keys(coordinator) if has_mppt else ("solar_power",)
             )
             for key in pv_keys:
                 value = coordinator.data.get(key)
@@ -1219,14 +1247,16 @@ class ConsumptionTracker:
         self._daily_home_last_time = now
         self._daily_home_last_power_kw = power_kw
 
-    async def accumulate_daily_grid_energy(self) -> None:
+    async def accumulate_daily_grid_energy(self, now: datetime | None = None) -> None:
         """Integrate the net grid meter → exact daily import/export kWh.
 
         Sign convention of the consumption sensor: positive = importing from the
         grid, negative = exporting to it. Each half integrates separately so the
-        panel can show both totals.
+        panel can show both totals. The import half also feeds the 15-min
+        window (``update_grid_window``); export never discounts it.
         """
         ctrl = self._controller
+        local_now = now or dt_util.now()
         # Use the same meter transform as the PD loop so a user-inverted meter
         # (meter_inverted) keeps the +import / -export convention; otherwise the
         # import and export totals would be swapped.
@@ -1234,15 +1264,19 @@ class ConsumptionTracker:
         if grid_w is None:
             self._daily_grid_last_time = None
             self._daily_grid_last_power_kw = None
+            self.update_grid_window(local_now, None, None)
             return
         power_kw = grid_w / 1000.0
         now = monotonic()
+        imported_kwh = 0.0
+        interval_s = None
         # Trapezoidal rule with zero-crossing split: when the meter sign flips
         # between samples (import↔export), the interval is split at the crossing so
         # each half is booked to the correct side instead of misclassifying the
         # whole interval by the start sample's sign.
         if self._daily_grid_last_time is not None and self._daily_grid_last_power_kw is not None:
             dt_hours = (now - self._daily_grid_last_time) / 3600.0
+            interval_s = dt_hours * 3600.0
             if dt_hours > 0:
                 prev_kw = self._daily_grid_last_power_kw
                 curr_kw = power_kw
@@ -1250,6 +1284,7 @@ class ConsumptionTracker:
                     kwh = (prev_kw + curr_kw) / 2.0 * dt_hours
                     if kwh >= 0:
                         ctrl._daily_grid_import_energy_kwh += kwh
+                        imported_kwh += kwh
                     else:
                         ctrl._daily_grid_export_energy_kwh += -kwh
                 else:
@@ -1260,18 +1295,68 @@ class ConsumptionTracker:
                     kwh_second = curr_kw / 2.0 * dt_second
                     if kwh_first >= 0:
                         ctrl._daily_grid_import_energy_kwh += kwh_first
+                        imported_kwh += kwh_first
                     else:
                         ctrl._daily_grid_export_energy_kwh += -kwh_first
                     if kwh_second >= 0:
                         ctrl._daily_grid_import_energy_kwh += kwh_second
+                        imported_kwh += kwh_second
                     else:
                         ctrl._daily_grid_export_energy_kwh += -kwh_second
         self._daily_grid_last_time = now
         self._daily_grid_last_power_kw = power_kw
+        self.update_grid_window(local_now, imported_kwh, interval_s)
+
+    def update_grid_window(
+        self, now: datetime, import_kwh: float | None, interval_s: float | None
+    ) -> None:
+        """Add one meter interval to the current local quarter's import.
+
+        ``import_kwh`` None is a missing meter reading; ``interval_s`` None is
+        a sample with no live previous one (start, reload, after a gap). An
+        interval that crosses a boundary counts whole for the new quarter (one
+        sample of error, inside the guard band); the new quarter is trusted
+        only when that interval was live and no longer than the guard band.
+        """
+        if import_kwh is None:
+            self.window_valid = False
+            return
+        quarter = now.replace(minute=now.minute - now.minute % 15, second=0, microsecond=0)
+        if quarter != self.window_quarter:
+            self.window_valid = (
+                self.window_quarter is not None
+                and interval_s is not None
+                and interval_s <= _WINDOW_GUARD_S
+            )
+            self.window_quarter = quarter
+            self.window_import_kwh = 0.0
+        elif interval_s is None:
+            # Restarted mid-quarter: what came before this sample is unknown.
+            self.window_valid = False
+        self.window_import_kwh += import_kwh
+        self.window_sample_at = now
 
     # ------------------------------------------------------------------
     # Consumption history queries
     # ------------------------------------------------------------------
+
+    def _missing_day_kwh(self) -> float:
+        """Value assumed for a day without real data: a share of the fleet's
+        capacity, or the default while capacity is unknown. Never stored; the
+        history keeps its DEFAULT sentinels."""
+        capacity = sum(
+            (c.data.get("battery_total_energy") or 0)
+            for c in getattr(self._controller, "coordinators", []) if c.data
+        )
+        return capacity * MISSING_DAY_FLEET_SHARE if capacity > 0 else DEFAULT_BASE_CONSUMPTION_KWH
+
+    def _history_values(self) -> list[float]:
+        """History values with each sentinel day replaced by the missing-day value."""
+        missing = self._missing_day_kwh()
+        return [
+            missing if c == DEFAULT_BASE_CONSUMPTION_KWH else c
+            for _, c in self._controller._daily_consumption_history
+        ]
 
     def get_avg_daily_consumption(self) -> float:
         """Get average daily consumption from history, with fallback."""
@@ -1279,9 +1364,8 @@ class ConsumptionTracker:
             return self._vacation_baseline_kw()[0] * 24.0
         history = self._controller._daily_consumption_history
         if history:
-            total = sum(c for _, c in history)
-            return total / len(history)
-        return DEFAULT_BASE_CONSUMPTION_KWH
+            return sum(self._history_values()) / len(history)
+        return self._missing_day_kwh()
 
     async def get_dynamic_base_consumption(self) -> float:
         """Get dynamic base consumption from the 7-day average of daily home consumption.
@@ -1301,21 +1385,21 @@ class ConsumptionTracker:
         # must remain a pure in-memory fallback and never wait on Recorder.
         # Calculate average from history
         if len(ctrl._daily_consumption_history) == 0:
+            fallback = self._missing_day_kwh()
             _LOGGER.warning(
-                "No consumption history, using fallback: %.1f kWh",
-                DEFAULT_BASE_CONSUMPTION_KWH,
+                "No consumption history, using fallback: %.1f kWh", fallback,
             )
-            return DEFAULT_BASE_CONSUMPTION_KWH
+            return fallback
 
-        total = sum(consumption for _, consumption in ctrl._daily_consumption_history)
+        total = sum(self._history_values())
         average = total / len(ctrl._daily_consumption_history)
 
         if average <= 0:
+            fallback = self._missing_day_kwh()
             _LOGGER.warning(
-                "Average consumption is 0, using fallback: %.1f kWh",
-                DEFAULT_BASE_CONSUMPTION_KWH,
+                "Average consumption is 0, using fallback: %.1f kWh", fallback,
             )
-            return DEFAULT_BASE_CONSUMPTION_KWH
+            return fallback
 
         real_count = sum(
             1 for _, c in ctrl._daily_consumption_history if c != DEFAULT_BASE_CONSUMPTION_KWH
@@ -1770,7 +1854,7 @@ class ConsumptionTracker:
         Returns solar noon as a float hour (e.g. 13.25 = 13:15).
         Cached per date to handle DST transitions.
         """
-        target_date = for_date or datetime.now().date()
+        target_date = for_date or local_now().date()
         if target_date in self._solar_noon_cache:
             return self._solar_noon_cache[target_date]
 
@@ -1800,7 +1884,7 @@ class ConsumptionTracker:
             if config.latitude is None:
                 return None
 
-            target_date = for_date or datetime.now().date()
+            target_date = for_date or local_now().date()
             observer = Observer(latitude=config.latitude, longitude=config.longitude)
             return self._local_hours(
                 astral_sunrise(observer, target_date, tzinfo=ZoneInfo(config.time_zone)),
@@ -1816,7 +1900,7 @@ class ConsumptionTracker:
             if config.latitude is None:
                 return None
 
-            target_date = for_date or datetime.now().date()
+            target_date = for_date or local_now().date()
             observer = Observer(latitude=config.latitude, longitude=config.longitude)
             return self._local_hours(
                 astral_sunset(observer, target_date, tzinfo=ZoneInfo(config.time_zone)),
@@ -1849,7 +1933,7 @@ class ConsumptionTracker:
         if ctrl._solar_t_start is not None:
             return  # Already detected today
 
-        now = datetime.now()
+        now = local_now()
         if now.hour < 7:
             return  # Too early, any export is likely from nocturnal grid charging
 
@@ -1897,7 +1981,7 @@ class ConsumptionTracker:
         t_end = 2 * solar_noon - ctrl._solar_t_start
 
         # Dynamic extension: if current time is past T_end but batteries still charging
-        now = datetime.now()
+        now = local_now()
         now_h = now.hour + now.minute / 60.0
         if now_h > t_end:
             any_charging = any(

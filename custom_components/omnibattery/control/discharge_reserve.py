@@ -33,6 +33,7 @@ from datetime import datetime, timedelta
 from time import monotonic
 from typing import TYPE_CHECKING, Any
 
+from ..infra.clock import local_now
 from ..const import CHARGE_EFFICIENCY, PREDICTIVE_MODE_DYNAMIC_PRICING
 from ..drivers.base import has_solar_production_source
 from ..energy import effective_round_trip_efficiency
@@ -133,7 +134,7 @@ class DischargeReserveManager:
 
     def _now(self) -> datetime:
         """Return local wall-clock time, isolated for deterministic tests."""
-        return datetime.now()
+        return local_now()
 
     @property
     def plan(self) -> ReservePlan | None:
@@ -689,6 +690,7 @@ class DischargeReserveManager:
         )
         if not consumption:
             return {}, {}, None
+        consumption = self._peak_shaving_hold(pricing, consumption, now)
 
         solar: dict = {}
         fraction_fn = None
@@ -703,19 +705,93 @@ class DischargeReserveManager:
             # future slots alone; a whole-day figure keeps its cumulative share,
             # or the evening would be credited with the morning's production and
             # the reserve would silently never engage.
+            remaining = self._forecast_is_remaining(pricing)
+            spread = slots
+            if remaining:
+                # A remaining-today figure belongs to today's slots only; spread
+                # over tomorrow's daylight too it left today a fraction. Tomorrow's
+                # sun comes from the provider's periods below.
+                timezone = solar_forecast_local_timezone(
+                    self._hass, self._controller, now
+                )
+                local_now = (
+                    now.replace(tzinfo=timezone)
+                    if now.tzinfo is None
+                    else now.astimezone(timezone)
+                )
+                midnight = local_now.replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ) + timedelta(days=1)
+                spread = [
+                    slot
+                    for slot in slots
+                    if (
+                        slot.start.replace(tzinfo=timezone)
+                        if slot.start.tzinfo is None
+                        else slot.start.astimezone(timezone)
+                    )
+                    < midnight
+                ]
+            solar = {slot: 0.0 for slot in slots}
+            solar.update(
+                distribute_solar_forecast(
+                    spread,
+                    float(forecast_kwh),
+                    fraction_fn,
+                    normalize_future=remaining,
+                )
+            )
             solar = self._follow_measured_production(
-                self._follow_provider_curve(
-                    distribute_solar_forecast(
-                        slots,
-                        float(forecast_kwh),
-                        fraction_fn,
-                        normalize_future=self._forecast_is_remaining(pricing),
-                    ),
-                    now,
-                ),
-                now,
+                self._follow_provider_curve(solar, now), now
             )
         return consumption, solar, fraction_fn
+
+    def _peak_shaving_hold(self, pricing, consumption: dict, now: datetime) -> dict:
+        """Leave the load below the grid import cap to the grid until sunrise.
+
+        While peak shaving conserves, the battery covers only what is above
+        ``max_contracted_power`` (#506); the charge planner models the same hold
+        (``battery_idle_intervals``), so the reserve must not hold energy for
+        load the battery will not carry.
+        """
+        controller = self._controller
+        held_check = getattr(controller, "_is_capacity_protection_soc_limited", None)
+        try:
+            limit_kw = max(
+                0.0, float(getattr(controller, "max_contracted_power", 0.0) or 0.0)
+            ) / 1000.0
+            if not callable(held_check) or held_check() is not True or limit_kw <= 0.0:
+                return consumption
+            held_until = pricing._solar_timeline_window(
+                now, getattr(controller, "_consumption_tracker", None)
+            )[0]
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Discharge reserve: peak-shaving hold unavailable: %s", err)
+            return consumption
+        if held_until is None:
+            return consumption
+        timezone = solar_forecast_local_timezone(self._hass, controller, now)
+
+        def local(value: datetime) -> datetime:
+            if value.tzinfo is None:
+                return value.replace(tzinfo=timezone)
+            return value.astimezone(timezone)
+
+        cutoff = local(held_until)
+        held: dict = {}
+        for slot, kwh in consumption.items():
+            start, end = local(slot.start), local(slot.end)
+            total_s = (end - start).total_seconds()
+            before_s = min(max((cutoff - start).total_seconds(), 0.0), total_s)
+            if before_s <= 0.0 or total_s <= 0.0:
+                held[slot] = kwh
+                continue
+            share = before_s / total_s
+            held[slot] = (
+                max(0.0, kwh * share - limit_kw * before_s / 3600.0)
+                + kwh * (1.0 - share)
+            )
+        return held
 
     def _net_demand_and_surplus(
         self, consumption: dict, solar: dict, now: datetime
@@ -972,7 +1048,12 @@ class DischargeReserveManager:
         # is spending it on a spike on purpose. A floor would fight both.
         if getattr(controller, "_curtailment_runtime_status", None) in _CURTAILMENT_ACTIVE_STATES:
             return GUARD_CURTAILMENT
-        if getattr(controller, "_capacity_protection_active", False):
+        # Not while the grid import cap is overriding this very block (#506):
+        # the block is already suspended for the excess, and withdrawing it
+        # would drop the cap's reason to engage on the next cycle.
+        if getattr(controller, "_capacity_protection_active", False) and not getattr(
+            controller, "_cap_overrides_policy", False
+        ):
             return GUARD_CAPACITY_PROTECTION
 
         return None

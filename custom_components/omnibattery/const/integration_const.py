@@ -46,11 +46,6 @@ SERIAL_BAUDRATE = 115200
 # spacing to MESSAGE_WAIT_MS_RS485_GATEWAY for any Marstek firmware version.
 CONF_RS485_GATEWAY = "rs485_gateway"
 
-# Per-battery Indevolt request speed (maximum / fast / normal / conservative): how
-# often the driver may talk to the battery. The slot per speed, the default and
-# the floors live in infra/indevolt_client.py; backoff applies on top of every speed.
-CONF_INDEVOLT_REQUEST_SPEED = "indevolt_request_speed"
-
 # Maximum power (W) per battery version — used by config_flow to set slider limits
 MAX_POWER_BY_VERSION = {
     "v2": 2500,
@@ -59,32 +54,6 @@ MAX_POWER_BY_VERSION = {
     "vD": 2500,
 }
 DEFAULT_VERSION = "v2"
-
-VENUS_D_2500W_MIN_EMS_VERSION = 149
-VENUS_D_LEGACY_MAX_POWER_W = 2200
-
-
-def max_power_for_battery_version(
-    battery_version: str,
-    ems_version: object = None,
-) -> int:
-    """Return the safe per-battery power ceiling for a Marstek model/FW.
-
-    Venus D accepts 2500 W only from EMS firmware 149 onward.  Unknown Venus D
-    firmware is treated conservatively until register 30200 has been read.
-    """
-    default = int(MAX_POWER_BY_VERSION.get(battery_version, 2500))
-    if battery_version != "vD":
-        return default
-    try:
-        firmware = int(float(ems_version))
-    except (TypeError, ValueError):
-        return VENUS_D_LEGACY_MAX_POWER_W
-    return (
-        default
-        if firmware >= VENUS_D_2500W_MIN_EMS_VERSION
-        else VENUS_D_LEGACY_MAX_POWER_W
-    )
 
 # Maximum number of independently controllable battery devices in one entry.
 # Keep the aggregate system-power slider envelope in sync with the largest
@@ -241,6 +210,9 @@ MAX_TIME_SLOTS = 8
 
 # Default base consumption fallback (kWh/day)
 DEFAULT_BASE_CONSUMPTION_KWH = 5.0  # Fallback when no consumption history available
+# A home typically uses about one battery's worth a day; the value assumed for a
+# day without real data, used only until real days are learned.
+MISSING_DAY_FLEET_SHARE = 0.8
 
 # Predictive charging / anti-curtailment safety margin.
 # How much the solar forecast is distrusted: this many kWh are subtracted from
@@ -295,17 +267,9 @@ BALANCE_STORAGE_VERSION = 1
 # settled WAIT_MEASURE interval. The integration reads its own coordinator
 # telemetry when handling this event; the blueprint does not provide voltages.
 EVENT_BLUEPRINT_BALANCE_MEASUREMENT_READY = "omnibattery_balance_measurement_ready"
-# Marstek cells ship from the factory with a sizeable top-of-charge imbalance
-# (commonly ~170-180 mV). At 3.55 V the LiFePO4 curve is very steep, so this
-# factory spread is normal — not a fault. The status thresholds below are
-# absolute raw-delta values chosen to sit above that factory baseline, so a
-# fresh battery reads green. The baseline offset is subtracted only in the
-# rising-trend magnitude gate, so steady factory-level readings do not trip a
-# trend alert (slope is unaffected — subtracting a constant does not change it).
-BALANCE_BASELINE_OFFSET_MV = 180  # mV — factory top-of-charge imbalance, used by the trend gate
-BALANCE_THRESHOLD_YELLOW = 200    # mV — raw delta above this: yellow
-BALANCE_THRESHOLD_ORANGE = 230    # mV — raw delta above this: orange
-BALANCE_THRESHOLD_RED = 250       # mV — raw delta above this: red
+# The factory-spread offset and the yellow/orange/red thresholds belong to the
+# driver: see ``drivers.base.BalanceBaseline`` and
+# ``DriverCapabilities.balance_baseline``.
 BALANCE_HISTORY_MAX = 52         # ~1 year of weekly readings
 BALANCE_RED_CONSECUTIVE_ALERT = 2
 BALANCE_TREND_ALERT_AVG_MV = 40.0   # baseline-corrected avg must exceed this (raw avg > 220 mV) to fire a rising-trend alert
@@ -315,12 +279,11 @@ BALANCE_NOTIFY_COOLDOWN_DAYS = 7    # min days between cell-imbalance notificati
 # When enabled per battery, slow charging only while the target is 100% and
 # cells enter the top voltage range. This is voltage-only; SOC is intentionally
 # ignored because some batteries report it unreliably near the top.
-NORMAL_BALANCE_TAPER_CELL_VOLTAGE = 3.48
-# Hysteresis: taper latch releases only after cell drops this far below entry.
-# Prevents oscillation: at low taper power the cell can relax below 3.48 V but not
-# to 3.44 V, so the latch stays active until the battery is meaningfully discharged.
-NORMAL_BALANCE_TAPER_EXIT_CELL_VOLTAGE = 3.44
-NORMAL_BALANCE_PAUSE_CELL_VOLTAGE = 3.60
+# The cell-voltage levels (taper entry 3.48 V, latch exit 3.44 V, pause 3.60 V,
+# retry 3.57 V) belong to the driver: see ``drivers.base.CellVoltageProfile`` and
+# ``DriverCapabilities.cell_voltage_profile``. The exit level is a hysteresis: at
+# low taper power the cell can relax below the entry but not to the exit, so the
+# latch stays active until the battery is meaningfully discharged.
 NORMAL_BALANCE_CHARGE_POWER_W = 200
 NORMAL_BALANCE_MEASURE_WAIT_SECONDS = 60
 # Venus A/D can expose several coupled packs through one inverter. Their top
@@ -345,10 +308,8 @@ NORMAL_BALANCE_RECAL_SOC_THRESHOLD = 99        # %: below this, make one best-ef
 NORMAL_BALANCE_RECAL_CUTOFF_POWER_W = 10       # W: charge collapsed (BMS terminated)
 NORMAL_BALANCE_RECAL_CUTOFF_CYCLES = 5         # consecutive cycles to confirm the BMS cutoff
 NORMAL_BALANCE_RECAL_INVERTER_STANDBY = 1      # inverter_state raw value for Standby
-INVERTER_STATE_AC_BYPASS = 6                  # inverter_state raw value for Bypass (grid passed through to the backup port)
 # After a cutoff above the pause voltage, allow one extra 200 W charge when the
-# cell has relaxed to this voltage.  The retry is deliberately one-shot.
-NORMAL_BALANCE_RECAL_RETRY_CELL_VOLTAGE = 3.57
+# cell has relaxed to the profile's retry voltage.  The retry is deliberately one-shot.
 
 # BMS low-SOC discharge cutoff (low-SOC counterpart to NORMAL_BALANCE_RECAL_*).
 # Below this SOC the BMS may refuse to discharge on its own (protective cutoff,
@@ -519,8 +480,11 @@ PD_QUALITY_RESTART_SETTLE_S = float(DISCHARGE_ENGAGE_GRACE_S)
 # ~15 minutes while SOC climbed 99% -> 100%, inverter never reporting
 # Standby. That gap was recorded as non-delivery and drove wake nudges
 # (RS485 re-assert) despite SOC genuinely still rising. Matches
-# tick_bms_cutoff's own taper-zone gate so both treat the same SOC band as
-# "possibly tapering".
+# tick_bms_cutoff's own taper-zone gate so both treat the same band as
+# "possibly tapering": this SOC, or below it the top cell at the driver's
+# taper_entry_v. A BMS that tapers on cell voltage starts
+# earlier (a Zendure SolarFlow 2400 AC+ from 93% SOC, down to 5% of the
+# command at 97%).
 HIGH_SOC_CHARGE_TAPER_FLOOR = 99  # %: at/above this, judge charge non-delivery as a possible taper first
 
 # Bound on the exemption above: a battery that gets physically stuck in the
@@ -641,7 +605,6 @@ T_START_FALLBACK_HOUR = 11  # If no T_start by 11:00, unlock immediately
 
 EVENING_REEVAL_HOURS_BEFORE_TEND = 1.5  # Trigger evening re-evaluation 1.5h before estimated T_end
 EVENING_REEVAL_FALLBACK_HOUR = 16.0     # Fallback trigger hour when T_start was never detected
-EVENING_DEFICIT_THRESHOLD_KWH = 0.3    # Minimum deficit to bother scheduling evening charging
 
 # Excluded-device solar claim re-evaluation: an EV session starting or ending
 # moves how much of the remaining forecast the battery may count on.
@@ -666,10 +629,10 @@ WEEKDAY_MAP = {
 CONF_CAPACITY_PROTECTION_ENABLED = "capacity_protection_enabled"
 CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES = "capacity_protection_excluded_devices"
 CONF_CAPACITY_PROTECTION_SOC_THRESHOLD = "capacity_protection_soc_threshold"
-CONF_CAPACITY_PROTECTION_LIMIT = "capacity_protection_limit"
+# 15-min billing window for the grid import cap (#506); absent = country default.
+CONF_GRID_IMPORT_WINDOW_15MIN = "grid_import_window_15min"
 
 DEFAULT_CAPACITY_PROTECTION_SOC = 30
-DEFAULT_CAPACITY_PROTECTION_LIMIT = 2500
 
 # PD Controller Advanced Configuration Keys
 CONF_PD_KP = "pd_controller_kp"
@@ -1274,15 +1237,16 @@ CONFIG_NUMBER_DEFINITIONS = [
         "power_direction": "discharge",
     },
     {
+        # The one grid import cap (#506): always present, it limits grid
+        # charging and makes the battery cover the import above it.
         "key": CONF_MAX_CONTRACTED_POWER,
-        "name": "Max Contracted Power",
-        "min": 1000,
+        "name": "Maximum Grid Import",
+        "min": 500,
         "max": 20000,
         "step": 100,
         "unit": "W",
         "default": 7000,
         "icon": "mdi:transmission-tower",
-        "condition": CONF_ENABLE_PREDICTIVE_CHARGING,
     },
     {
         "key": CONF_DELAY_SAFETY_MARGIN_MIN,
@@ -1327,17 +1291,6 @@ CONFIG_NUMBER_DEFINITIONS = [
         "unit": "%",
         "default": DEFAULT_CAPACITY_PROTECTION_SOC,
         "icon": "mdi:battery-alert-variant-outline",
-        "condition": CONF_CAPACITY_PROTECTION_ENABLED,
-    },
-    {
-        "key": CONF_CAPACITY_PROTECTION_LIMIT,
-        "name": "Capacity Protection Peak Limit",
-        "min": 500,
-        "max": 20000,
-        "step": 100,
-        "unit": "W",
-        "default": DEFAULT_CAPACITY_PROTECTION_LIMIT,
-        "icon": "mdi:flash-alert",
         "condition": CONF_CAPACITY_PROTECTION_ENABLED,
     },
     {

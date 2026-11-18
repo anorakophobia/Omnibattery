@@ -15,7 +15,6 @@ from pathlib import Path
 import pytest
 
 from custom_components.omnibattery.const import (
-    DEFAULT_CAPACITY_PROTECTION_LIMIT,
     DEFAULT_CAPACITY_PROTECTION_SOC,
     DEFAULT_CHARGE_DELAY_BALANCE_DEADBAND_KWH,
     DEFAULT_DELAY_SAFETY_MARGIN_MIN,
@@ -84,7 +83,7 @@ DEFAULTS = {
     "predictive_min_soc_floor": _pct(DEFAULT_PREDICTIVE_MIN_SOC_FLOOR),
     "max_price_threshold_enabled": "off (automatic)",
     "max_price_threshold": "not set (automatic)",
-    "min_arbitrage_margin": "not set (off)",
+    "min_arbitrage_margin": "0 (losses only)",
     "round_trip_efficiency_use_measured": "on",
     "round_trip_efficiency": "measured (0.85 until a battery has 50 cycles)",
     "negative_price_charging": "off",
@@ -144,8 +143,8 @@ DEFAULTS = {
     "system_max_charge_power": _unit(DEFAULT_SYSTEM_MAX_CHARGE_POWER, "W", off=True),
     "system_max_discharge_power": _unit(DEFAULT_SYSTEM_MAX_DISCHARGE_POWER, "W", off=True),
     "capacity_protection_excluded_devices": "off",
+    "grid_import_window_15min": "off (on in Belgium)",
     "capacity_protection_soc_threshold": _pct(DEFAULT_CAPACITY_PROTECTION_SOC),
-    "capacity_protection_limit": _unit(DEFAULT_CAPACITY_PROTECTION_LIMIT, "W"),
     # temperature charge limit
     "temp_charge_limit_c": _unit(DEFAULT_TEMP_CHARGE_LIMIT_C, "°C"),
     "temp_charge_limit_band_c": _unit(DEFAULT_TEMP_CHARGE_LIMIT_BAND_C, "°C"),

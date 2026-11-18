@@ -24,11 +24,13 @@ from homeassistant.util import dt as dt_util
 
 from ..const import (
     DEFAULT_SOLAR_PROFILE_MODE,
+    DEFAULT_VERSION,
     DOMAIN,
+    SUPPORTED_VERSIONS,
     normalize_solar_profile_mode,
 )
 from ..pricing.solar_timeline import PROGRESS_BIN_COUNT
-from ..drivers.base import has_connected_mppt_pv
+from ..drivers.base import has_connected_mppt_pv, mppt_power_keys
 from .consumption_profile import (
     INTERVAL_COUNT,
     INTERVAL_SECONDS,
@@ -611,7 +613,7 @@ class SolarProfileTracker:
                 continue
             channels = tuple(
                 key
-                for key in ("mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power")
+                for key in mppt_power_keys(coordinator)
                 if not hasattr(coordinator, "data") or key in (getattr(coordinator, "data", {}) or {})
             )
             capacity = getattr(coordinator, "battery_capacity_kwh", None)
@@ -623,9 +625,15 @@ class SolarProfileTracker:
                 capacity = None
             if capacity is not None and (not math.isfinite(capacity) or capacity <= 0.0):
                 capacity = None
+            model = getattr(coordinator, "battery_version", None)
+            if model is None and hasattr(coordinator, "stored_battery_version"):
+                # Brands without a version keep fingerprinting the stored one
+                # (default when absent or unsupported), so learned profiles stay.
+                raw = coordinator.stored_battery_version
+                model = raw if raw in SUPPORTED_VERSIONS else DEFAULT_VERSION
             source = {
                 "id": getattr(coordinator, "device_key", None) or getattr(coordinator, "name", None) or str(coordinator),
-                "model": getattr(coordinator, "battery_version", None),
+                "model": model,
                 "channels": channels,
                 "capacity_kwh": capacity,
             }
@@ -1360,6 +1368,18 @@ class SolarProfileTracker:
                 "fallback_reason": reason,
             }
         )
+
+    def recent_daily_energy_kwh(self, reference_date: date) -> float | None:
+        """Reference energy for a day without a dated forecast."""
+        days = [
+            day
+            for day in self._days.values()
+            if day.complete
+            and day.generation == self._generation
+            and day.local_date < reference_date
+        ]
+        totals = self._recent_totals(days)
+        return _median(totals) if totals else None
 
     def get_learned_shape(self, target_date: date | None = None) -> SolarProfileSnapshot:
         """Return the current learned snapshot without exposing raw days."""

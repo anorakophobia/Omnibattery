@@ -15,8 +15,6 @@ _LOGGER = logging.getLogger(__name__)
 
 from ..const import (
     DOMAIN,
-    ALARM_BIT_DESCRIPTIONS,
-    FAULT_BIT_DESCRIPTIONS,
     DEBUG_POLL_SENSOR_VALUES,
     CONF_SOLAR_PRODUCTION_SENSOR,
     CONF_METER_INVERTED,
@@ -26,7 +24,7 @@ from ..const import (
     CONF_BATTERY_MANUAL_MODE_ENABLED,
     pd_profile_from_params,
 )
-from ..drivers.base import DELIVERED_AC_POWER_KEY
+from ..drivers.base import DELIVERED_AC_POWER_KEY, InverterStatus, mppt_power_keys
 from ..infra.coordinator import MarstekVenusDataUpdateCoordinator
 from ..infra.entity_naming import system_entity_id
 from ..tracking.consumption_tracker import (
@@ -393,12 +391,7 @@ class MarstekVenusAggregateSensor(RestoreEntity, SensorEntity):
                 mppt_values = (
                     [
                         data.get(mk)
-                        for mk in (
-                            "mppt1_power",
-                            "mppt2_power",
-                            "mppt3_power",
-                            "mppt4_power",
-                        )
+                        for mk in mppt_power_keys(coordinator)
                         if data.get(mk) is not None
                     ]
                     # Coordinators predating the topology setting retain the
@@ -416,7 +409,7 @@ class MarstekVenusAggregateSensor(RestoreEntity, SensorEntity):
                 # (inverter_state == 4, grid down). With the grid present it's fed
                 # by passthrough, so counting it would inflate discharge / eat charge.
                 aco = 0.0
-                if data.get("inverter_state") == 4:
+                if coordinator.driver.inverter_status(data) is InverterStatus.BACKUP:
                     aco = data.get("ac_offgrid_power") or 0.0
                 total += -ac - aco + mppt
                 has_data = True
@@ -464,11 +457,12 @@ class MarstekVenusAggregateSensor(RestoreEntity, SensorEntity):
             weighted_soc = sum(socs) / len(socs)
         else:
             weighted_soc = (total_stored / total_capacity) * 100
-        has_v3 = any(
-            getattr(c, "battery_version", "v2") in ("v3", "vA", "vD")
+        decimals = [
+            c.traits.soc_decimals
             for c in self.coordinators
-        )
-        precision = 1 if has_v3 else self.definition.get("precision", 0)
+            if c.traits.soc_decimals is not None
+        ]
+        precision = max(decimals) if decimals else self.definition.get("precision", 0)
         return round(weighted_soc, precision)
 
     @staticmethod
@@ -799,10 +793,6 @@ class SystemAlarmSensor(SensorEntity):
             return
         self.async_write_ha_state()
 
-    @staticmethod
-    def _active_labels(value: int, descriptions: dict) -> list[str]:
-        return [descriptions[b] for b in range(32) if (value & (1 << b)) and b in descriptions]
-
     @property
     def native_value(self) -> str:
         """Return overall alarm state across all batteries."""
@@ -811,10 +801,11 @@ class SystemAlarmSensor(SensorEntity):
         for coordinator in self.coordinators:
             if not coordinator.data:
                 continue
-            if coordinator.data.get("fault_status") or 0:
-                any_fault = True
-            if coordinator.data.get("alarm_status") or 0:
-                any_alarm = True
+            for alarm in coordinator.driver.active_alarms(coordinator.data):
+                if alarm.kind == "fault":
+                    any_fault = True
+                else:
+                    any_alarm = True
         if any_fault:
             return "Fault"
         if any_alarm:
@@ -828,13 +819,11 @@ class SystemAlarmSensor(SensorEntity):
         for coordinator in self.coordinators:
             if not coordinator.data:
                 continue
-            fault_val: int = coordinator.data.get("fault_status") or 0
-            alarm_val: int = coordinator.data.get("alarm_status") or 0
-            active: list[str] = []
-            if fault_val:
-                active += [f"[Fault] {label}" for label in self._active_labels(fault_val, FAULT_BIT_DESCRIPTIONS)]
-            if alarm_val:
-                active += [f"[Alarm] {label}" for label in self._active_labels(alarm_val, ALARM_BIT_DESCRIPTIONS)]
+            active: list[str] = [
+                f"[{alarm.kind.capitalize()}] {alarm.description}"
+                for alarm in coordinator.driver.active_alarms(coordinator.data)
+                if alarm.description
+            ]
             if active:
                 attrs[coordinator.name] = active
         return attrs

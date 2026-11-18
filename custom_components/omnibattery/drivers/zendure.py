@@ -45,13 +45,20 @@ from typing import Any, Optional
 import aiohttp
 
 from .base import (
+    KEY_MAX_DISCHARGE_POWER,
     BatteryDriver,
     DriverCapabilities,
+    DriverContext,
+    DriverReconciliation,
+    DriverTraits,
     DELIVERED_AC_POWER_KEY,
+    LFP_CELL_VOLTAGE_PROFILE,
     ReadGroup,
+    ReconcileState,
     SetpointResult,
     TelemetrySnapshot,
 )
+from .zendure_flow import ZENDURE_SETUP
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -104,6 +111,9 @@ _MODEL_POWER_LIMITS: dict[str, tuple[int, int]] = {
 _SOLAR_MPPT_KEYS: frozenset[str] = frozenset({
     "solar_power", "mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power",
 })
+_MPPT_POWER_KEYS: tuple[str, ...] = (
+    "mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power",
+)
 _AC_COUPLED_MODELS: frozenset[str] = frozenset({
     ZENDURE_MODEL_1600AC_PLUS,
     ZENDURE_MODEL_2400AC_PLUS,
@@ -192,7 +202,7 @@ def _decikelvin_to_c(raw: float) -> float:
 
 # Per-pack telemetry from packData[] is exposed as `pack{N}_{suffix}` logical
 # keys (N is 1-based). They are not in SENSOR_DEFINITIONS — the platform builds
-# one ZendurePackSensor per (pack, spec) from PACK_FIELD_SPECS at setup, sized to
+# one PackFieldSensor per (pack, spec) from PACK_FIELD_SPECS at setup, sized to
 # the real pack count — so the driver pre-scales the values here (the coordinator
 # only scales keys that have a definition). Matches this regex; preserved through
 # the read_telemetry key filter even though no definition lists them.
@@ -230,7 +240,7 @@ def _reported_capacity_kwh(packs: list[dict], pack_count: int | None) -> float |
     return round(sum(capacities), 2)
 
 # Numeric per-pack sensor fields. Each becomes a sensor entity per pack; sn /
-# model / state ride along as attributes on the SoC sensor (see ZendurePackSensor).
+# model / state ride along as attributes on the SoC sensor (see PackFieldSensor).
 PACK_FIELD_SPECS: list[dict] = [
     {"suffix": "soc",              "name": "SOC",              "unit": "%",  "device_class": "battery",     "precision": 0, "icon": "mdi:battery"},
     {"suffix": "voltage",          "name": "Voltage",          "unit": "V",  "device_class": "voltage",     "precision": 2},
@@ -320,6 +330,7 @@ NUMBER_DEFINITIONS: list[dict] = [
      "device_class": "battery", "min": 5,    "max": 50,  "step": 1,
      "scale": 1, "precision": 0, "scan_interval": "low",  "enabled_by_default": True},
     {"key": "inverse_max_power","name": "Max Inverter Output",  "unit": "W",
+     "canonical_key": KEY_MAX_DISCHARGE_POWER,
      "device_class": "power",   "min": 100,  "max": 2400,"step": 10,
      "scale": 1, "precision": 0, "scan_interval": "low",  "enabled_by_default": True},
 ]
@@ -364,6 +375,128 @@ def _number_definitions_for_model(model: str) -> list[dict]:
 class ZendureLocalDriver(BatteryDriver):
     """Local HTTP driver for a single Zendure SolarFlow device."""
 
+    BRAND = "zendure"
+    SETUP = ZENDURE_SETUP
+    TRAITS = DriverTraits(
+        supports_voltage_taper=False,
+        device_owns_initial_config=True,
+        ip_addressed=True,
+        cutoff_without_inverter_state=True,
+        capacity_field="optional",
+        min_soc_range=(5, 50, 12),
+    )
+    LABEL = "Zendure SolarFlow"
+    MANUFACTURER = "Zendure"
+    DEFAULT_MODEL = "Zendure"
+
+    @classmethod
+    def from_config(cls, battery_config, context: DriverContext) -> "ZendureLocalDriver":
+        # Zendure's caps are read-only device traits, not writable registers. The
+        # capability must stay the hardware ceiling (driver default) - feeding the
+        # user-tunable max_charge_power here would trap the soft-max slider's
+        # native_max at the saved value and re-clamp the apply path below it. The
+        # user's runtime ceiling is enforced via coordinator.max_charge_power
+        # instead (soft-max entity + device chargeMaxLimit sync).
+        return cls(
+            battery_config["host"],
+            port=battery_config["port"],
+            model=battery_config.get("zendure_model", ZENDURE_MODEL_2400AC_PRO),
+        )
+
+    def coordinator_attributes(self) -> dict:
+        return {"zendure_model": self._model}
+
+    def reconcile(
+        self, data, *, reason, state: ReconcileState | None = None
+    ) -> DriverReconciliation | None:
+        """Promote a legacy entry to the detected model; follow the device's values."""
+        if state is None:
+            return None
+        if reason == "connect":
+            return self._reconcile_detected_model(state)
+        if reason == "poll":
+            return self._reconcile_reported_limits(data, state)
+        return None
+
+    def _reconcile_detected_model(
+        self, state: ReconcileState
+    ) -> DriverReconciliation | None:
+        detected_model = self.model_key
+        if not detected_model:
+            return None
+        caps = self._capabilities
+        model_changed = detected_model != state.attributes.get("zendure_model")
+        charge_cap_changed = state.device_max_charge_power != caps.max_charge_power_w
+        discharge_cap_changed = (
+            state.device_max_discharge_power != caps.max_discharge_power_w
+        )
+        if not (model_changed or charge_cap_changed or discharge_cap_changed):
+            return None
+        persist: dict = {}
+        if model_changed:
+            persist["zendure_model"] = detected_model
+        if charge_cap_changed:
+            persist["device_max_charge_power"] = caps.max_charge_power_w
+        if discharge_cap_changed:
+            persist["device_max_discharge_power"] = caps.max_discharge_power_w
+        return DriverReconciliation(
+            device_max_charge_power=(
+                caps.max_charge_power_w if charge_cap_changed else None
+            ),
+            device_max_discharge_power=(
+                caps.max_discharge_power_w if discharge_cap_changed else None
+            ),
+            attributes={"zendure_model": detected_model} if model_changed else {},
+            persist=persist,
+            definitions_changed=model_changed,
+            message=(
+                "Synchronized Zendure device profile %s (%d W charge / %d W discharge)"
+                % (detected_model, caps.max_charge_power_w, caps.max_discharge_power_w)
+            ),
+        )
+
+    def _reconcile_reported_limits(
+        self, data, state: ReconcileState
+    ) -> DriverReconciliation | None:
+        """Adopt inverseMaxPower as the discharge cap, soc_set/min_soc as SOC limits."""
+        if not data:
+            return None
+        configured_discharge = None
+        persist: dict = {}
+        message = None
+        reported_limit = data.get("inverse_max_power")
+        if reported_limit is not None:
+            try:
+                reported_limit = int(reported_limit)
+            except (TypeError, ValueError):
+                reported_limit = 0
+            if (
+                reported_limit > 0
+                and reported_limit != state.configured_max_discharge_power
+            ):
+                configured_discharge = reported_limit
+                persist["max_discharge_power"] = reported_limit
+                message = "Synchronized Zendure inverseMaxPower %d W → %d W" % (
+                    min(
+                        state.device_max_discharge_power,
+                        state.configured_max_discharge_power,
+                    ),
+                    min(state.device_max_discharge_power, reported_limit),
+                )
+        # Registerless: the device SOC ceiling/floor are soc_set / min_soc, not
+        # charging_/discharging_cutoff_capacity, so adopt them as max_soc/min_soc.
+        max_soc = int(data["soc_set"]) if "soc_set" in data else None
+        min_soc = int(data["min_soc"]) if "min_soc" in data else None
+        if configured_discharge is None and max_soc is None and min_soc is None:
+            return None
+        return DriverReconciliation(
+            configured_max_discharge_power=configured_discharge,
+            max_soc=max_soc,
+            min_soc=min_soc,
+            persist=persist,
+            message=message,
+        )
+
     def __init__(
         self,
         host: str,
@@ -405,6 +538,9 @@ class ZendureLocalDriver(BatteryDriver):
                 default_discharge_power if max_discharge_power_w is None else max_discharge_power_w
             ),
             has_mppt_pv=model in _MPPT_MODELS,
+            mppt_power_keys=(
+                () if model in _AC_COUPLED_MODELS else _MPPT_POWER_KEYS
+            ),
             has_solar_telemetry=model in _AGGREGATE_PV_MODELS,
             has_alarm_registers=True,    # faultLevel + is_error
             has_rs485_control=False,
@@ -414,6 +550,7 @@ class ZendureLocalDriver(BatteryDriver):
             setpoint_confirm_reliable=False,  # HTTP report echoes the previous limit for ~2 s
             independent_power_planes=False,  # AC and cell power read identical (#556)
             actuator_latency_s=3.0,      # HTTP write + ~2-3 s engage/echo latency
+            cell_voltage_profile=LFP_CELL_VOLTAGE_PROFILE,  # publishes max_cell_voltage
         )
 
         _excluded = _SOLAR_MPPT_KEYS if model in _AC_COUPLED_MODELS else frozenset()
@@ -478,8 +615,8 @@ class ZendureLocalDriver(BatteryDriver):
         """Numeric per-pack sensor fields (see PACK_FIELD_SPECS).
 
         The sensor platform reads this back to build one entity per (pack, field),
-        sized to the live pack count. Absent on the Marstek driver, so the platform
-        getattr's it and skips per-pack entities for brands that don't expose packs.
+        sized to the live pack count. Empty on the base class, so brands that
+        don't expose packs get no per-pack entities.
         """
         return PACK_FIELD_SPECS
 
@@ -712,6 +849,9 @@ class ZendureLocalDriver(BatteryDriver):
                 else default_discharge_power
             ),
             has_mppt_pv=detected in _MPPT_MODELS,
+            mppt_power_keys=(
+                () if detected in _AC_COUPLED_MODELS else _MPPT_POWER_KEYS
+            ),
             has_solar_telemetry=detected in _AGGREGATE_PV_MODELS,
         )
 
@@ -859,6 +999,18 @@ class ZendureLocalDriver(BatteryDriver):
         limit = data.get("output_limit")
         return -int(limit) if limit is not None else None
 
+    def is_self_managed(self, data: dict) -> bool:
+        # socStatus 1 = the device is calibrating its SOC and ignores setpoints.
+        return data.get("soc_status") == 1
+
+    def device_max_soc(self, data: dict) -> float | None:
+        if "soc_set" not in data:
+            return None
+        value = data["soc_set"]
+        # A published-but-unknown Target SOC (None) still counts as "the device
+        # keeps its own ceiling"; 0.0 is the placeholder for that case.
+        return 0.0 if value is None else float(value)
+
     @property
     def control_dependency_keys(self) -> frozenset:
         # ac_mode + input/output_limit feed net_power_from_data, which the
@@ -902,10 +1054,6 @@ class ZendureLocalDriver(BatteryDriver):
         return await self._post_write(
             {"acMode": _AC_MODE_DISCHARGE, "outputLimit": 0, "smartMode": 1}
         )
-
-    async def set_rs485_control(self, enable: bool) -> bool:
-        """No-op: Zendure has no RS485 control mode."""
-        return False
 
     # --- internal HTTP helpers ----------------------------------------------
 

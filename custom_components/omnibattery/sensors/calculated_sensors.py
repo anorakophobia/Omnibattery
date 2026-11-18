@@ -19,7 +19,7 @@ from ..energy import (
     BACKUP_DAILY_DISCHARGING_ENERGY_KEY,
     effective_total_discharging_energy,
 )
-from ..drivers.base import DELIVERED_AC_POWER_KEY
+from ..drivers.base import BATTERY_DC_POWER_KEY, DELIVERED_AC_POWER_KEY, mppt_power_keys
 from ..infra.coordinator import MarstekVenusDataUpdateCoordinator
 from ..infra.entity_naming import english_entity_id
 from ..tracking.backfill import local_day_bounds
@@ -95,7 +95,6 @@ class MarstekVenusEfficiencySensor(CoordinatorEntity, RestoreEntity, SensorEntit
             )
             and getattr(capabilities, "independent_power_planes", True)
         )
-        self._mppt_keys = ["mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power"]
         # Energy on each plane, split by direction (kWh), MPPT=0 windows only.
         self._charge_ac_kwh = 0.0      # AC drawn while charging the cells
         self._charge_dc_kwh = 0.0      # DC stored while charging the cells
@@ -153,9 +152,12 @@ class MarstekVenusEfficiencySensor(CoordinatorEntity, RestoreEntity, SensorEntit
 
         # Hardware lifetime counters are normally a reliable round-trip
         # measurement. Some devices, however, can expose charge and discharge
-        # counters with different historical baselines. Never publish a
-        # physically impossible efficiency when that happens.
-        return round(min((discharge_energy / charge_energy) * 100, 100.0), 2)
+        # counters with different historical baselines. A ratio above 100% is
+        # physically impossible: report unknown rather than a made-up 100%.
+        ratio = discharge_energy / charge_energy
+        if ratio > 1.0:
+            return None
+        return round(ratio * 100, 2)
 
     @property
     def extra_state_attributes(self):
@@ -206,6 +208,9 @@ class MarstekVenusEfficiencySensor(CoordinatorEntity, RestoreEntity, SensorEntit
         if not data:
             return
         battery = data.get("battery_power")  # DC terminal, + charge / - discharge
+        dc = data.get(BATTERY_DC_POWER_KEY)  # drivers whose battery_power is AC-side
+        if dc is not None:
+            battery = dc
         ac = data.get("ac_power")            # AC port, opposite sign to battery
         if ac is None:
             # Registerless drivers with PV (Hoymiles 4020 X) have no ac_power
@@ -218,7 +223,11 @@ class MarstekVenusEfficiencySensor(CoordinatorEntity, RestoreEntity, SensorEntit
         if getattr(
             getattr(self.coordinator, "capabilities", None), "has_mppt_pv", False
         ):
-            solar = sum(v for k in self._mppt_keys if (v := data.get(k)) is not None)
+            solar = sum(
+                v
+                for k in mppt_power_keys(self.coordinator)
+                if (v := data.get(k)) is not None
+            )
         else:
             solar = data.get("solar_power") or 0.0
 
@@ -976,7 +985,7 @@ class SyntheticCapacitySensor(CoordinatorEntity, SensorEntity):
         return self.coordinator.battery_device_info
 
 
-class ZendurePackSensor(CoordinatorEntity, SensorEntity):
+class PackFieldSensor(CoordinatorEntity, SensorEntity):
     """Per-pack telemetry sensor (one per pack × field).
 
     The driver pre-scales packData[] into pack{N}_{suffix} keys; this entity reads

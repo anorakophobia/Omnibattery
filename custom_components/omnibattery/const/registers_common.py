@@ -1,6 +1,6 @@
 """Shared Modbus register infrastructure for all Marstek Venus battery versions.
 
-Contains: REGISTER_MAP, MESSAGE_WAIT_MS, bit-description maps, and
+Contains: REGISTER_MAP, MESSAGE_WAIT_MS, and
 calculated-sensor definition lists (cycle, solar power, battery cell power).
 """
 
@@ -88,7 +88,7 @@ MESSAGE_WAIT_MS_RS485_GATEWAY = 30
 # occasionally stalls for several seconds and then flushes queued replies in a
 # burst. Each pymodbus-internal retry re-sends the SAME transaction_id (>=3.8),
 # so a reply arriving after a per-attempt timeout still matches the retry and
-# is consumed (issue #361 history in infra/modbus_client.py).
+# is consumed (issue #361 history in drivers/marstek_client.py).
 #
 # That is why these were kept short: let the retry land inside the stall. On a
 # Venus D it does not work out that way. The stall is a regular one - every
@@ -103,7 +103,7 @@ MESSAGE_WAIT_MS_RS485_GATEWAY = 30
 #
 # Six seconds covers it with room to spare and the noise stops. The cost is
 # that a battery that is genuinely gone is given longer before the attempt is
-# abandoned - the outer safety net in infra/modbus_client.py grows from 11 s to
+# abandoned - the outer safety net in drivers/marstek_client.py grows from 11 s to
 # 20 s - which is the right trade for a device whose only failure mode here is
 # being four seconds late.
 #
@@ -114,52 +114,6 @@ READ_TIMEOUT_S = {
     "v3": 3,
     "vA": 3,
     "vD": 6,
-}
-
-# Standalone bit-description maps — used by both sensor definitions and the
-# alarm notification / SystemAlarmSensor logic so we avoid duplicating them.
-FAULT_BIT_DESCRIPTIONS: dict[int, str] = {
-    # Register 36100 (bits 0-15)
-    0: "Grid Overvoltage",
-    1: "Grid Undervoltage",
-    2: "Grid Overfrequency",
-    3: "Grid Underfrequency",
-    4: "Grid Peak Voltage",
-    5: "Current Dcover",
-    6: "Voltage Dcover",
-    # Register 36101 (bits 16-31)
-    16: "BAT Overvoltage",
-    17: "BAT Undervoltage",
-    18: "BAT Overcurrent",
-    19: "BAT Low SOC",
-    20: "BAT Communication Failure",
-    21: "BMS Protect",
-    22: "Inverter Soft Start Timeout",
-    23: "Self-Checking Failure",
-    24: "EEPROM Failure",
-    25: "Other System Failure",
-    26: "Hardware Bus Overvoltage",
-    27: "Hardware Output Overcurrent",
-    28: "Hardware Trans Overcurrent",
-    29: "Hardware Battery Overcurrent",
-    30: "Hardware Protection",
-    31: "Output Overcurrent",
-}
-
-ALARM_BIT_DESCRIPTIONS: dict[int, str] = {
-    # Register 36000 (bits 0-15)
-    0: "PLL Abnormal Restart",
-    1: "Overtemperature Limit",
-    2: "Low Temperature Limit",
-    3: "Fan Abnormal Warning",
-    4: "Low Battery SOC Warning",
-    5: "Output Overcurrent Warning",
-    6: "Abnormal Line Sequence Detection",
-    # Register 36001 (bits 16-31)
-    16: "WiFi Abnormal",
-    17: "BLE Abnormal",
-    18: "Network Abnormal",
-    19: "CT Connection Abnormal",
 }
 
 # Calculated cycle count. Sessy uses total_discharge / battery_capacity; legacy
@@ -208,6 +162,35 @@ BATTERY_CELL_POWER_SENSOR_DEFINITIONS = [
         "dependency_keys": {
             "battery": "battery_power",
             "mppt": ["mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power"],
+        },
+    }
+]
+
+# Definitions for efficiency sensors
+EFFICIENCY_SENSOR_DEFINITIONS = [
+    {
+        "name": "Round-Trip Efficiency Total",
+        "key": "round_trip_efficiency_total",
+        "unit": "%",
+        "state_class": "measurement",
+        "dependency_keys": {
+            "charge": "total_charging_energy",
+            "discharge": "total_discharging_energy"
+        },
+    }
+]
+
+# Definitions for stored energy sensors
+STORED_ENERGY_SENSOR_DEFINITIONS = [
+    {
+        "name": "Stored Energy",
+        "key": "stored_energy",
+        "unit": "kWh",
+        "device_class": "energy",
+        "state_class": "total",
+        "dependency_keys": {
+            "soc": "battery_soc",
+            "capacity": "battery_total_energy"
         },
     }
 ]

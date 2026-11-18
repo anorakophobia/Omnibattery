@@ -15,7 +15,15 @@ from custom_components.omnibattery.control.weekly_full_charge import (
 )
 from custom_components.omnibattery.control.power_distribution import PowerDistribution
 from custom_components.omnibattery.switch import BatteryManualModeSwitch, ManualModeSwitch
-from tests.conftest import FakeCoordinator
+from custom_components.omnibattery.drivers.zendure import ZendureLocalDriver
+from tests.conftest import FakeCoordinator, _FakeMarstekDriver
+
+
+def _zendure_driver():
+    """The real Zendure ``is_self_managed`` (it does not read the instance)."""
+    return SimpleNamespace(
+        is_self_managed=lambda data: ZendureLocalDriver.is_self_managed(None, data)
+    )
 
 
 class HashableNamespace(SimpleNamespace):
@@ -209,6 +217,36 @@ async def test_manual_mode_stays_enabled_when_deactivation_idle_fails():
 
 
 @pytest.mark.asyncio
+async def test_manual_mode_can_be_left_when_rs485_control_is_off():
+    """#895: no write is possible, so idle is already reached and the flag clears."""
+    coordinator = HashableNamespace(
+        name="Battery A",
+        rs485_user_disabled=True,
+        battery_manual_mode_enabled=True,
+        manual_force_mode="Charge",
+        manual_set_charge_power=2300,
+        manual_set_discharge_power=0,
+        persist_battery_config=Mock(),
+        async_request_refresh=AsyncMock(),
+    )
+    set_power = AsyncMock(return_value=False)
+    controller = _controller_with_reset(
+        _control_lock=asyncio.Lock(),
+        _set_battery_power=set_power,
+        schedule_control_cycle=Mock(),
+    )
+
+    await ChargeDischargeController._set_battery_manual_mode(
+        controller, coordinator, False
+    )
+
+    assert coordinator.battery_manual_mode_enabled is False
+    assert coordinator.manual_force_mode == "None"
+    assert coordinator.manual_set_charge_power == 0
+    set_power.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_manual_mode_deactivation_preserves_automatic_pd_command():
     coordinator = HashableNamespace(
         name="Battery A",
@@ -353,6 +391,7 @@ def test_power_distribution_drops_manual_battery_before_selection():
 
 def test_manual_grid_feedback_uses_ac_power_not_dc_solar_power():
     manual = SimpleNamespace(
+        driver=_FakeMarstekDriver(),
         battery_manual_mode_enabled=True,
         data={"ac_power": -700, "battery_power": 1000},
     )
@@ -397,10 +436,12 @@ def test_automatic_measured_power_excludes_manual_battery():
     manual = HashableNamespace(
         battery_manual_mode_enabled=True,
         data={"battery_power": 700},
+        driver=_FakeMarstekDriver(),
     )
     automatic = HashableNamespace(
         battery_manual_mode_enabled=False,
         data={"battery_power": -400},
+        driver=_FakeMarstekDriver(),
     )
     controller = SimpleNamespace(
         coordinators=[manual, automatic],
@@ -455,6 +496,7 @@ def test_soc_calibration_hands_battery_out_of_and_back_to_automatic_control():
     coordinator = HashableNamespace(
         name="Zendure",
         battery_manual_mode_enabled=False,
+        driver=_zendure_driver(),
         data={"soc_status": 1},
     )
     controller = _controller_with_reset(
@@ -482,6 +524,7 @@ def test_soc_calibration_hands_battery_out_of_and_back_to_automatic_control():
 async def test_calibrating_battery_gets_no_manual_setpoint():
     coordinator = SimpleNamespace(
         battery_manual_mode_enabled=False,
+        driver=_zendure_driver(),
         data={"soc_status": 1},
         needs_software_manual_control=True,
         manual_force_mode="None",

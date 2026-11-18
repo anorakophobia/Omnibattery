@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from custom_components.omnibattery import ChargeDischargeController
+from tests.conftest import _FakeMarstekDriver
 from custom_components.omnibattery.pricing import PriceSlot
 from custom_components.omnibattery.pricing.chronological import SlotAllocation
 from custom_components.omnibattery.pricing.daily_timeline import (
@@ -212,6 +213,53 @@ def test_time_slot_projection_uses_horizon_aware_windows_only_for_dashboard():
     assert result is not None
     assert preview_calls == [(now, midnight + timedelta(hours=12))]
     assert controller._planner_calls[0]["slots"] == (preview_slot,)
+
+
+@pytest.mark.parametrize(
+    ("before_open", "dated_sun", "plan_reaches_hours"),
+    [
+        # 23:00, the window opens at midnight: the control will plan it up to
+        # its own horizon, so the panel's plan reaches there.
+        (True, True, 32),
+        # Without dated sun for tomorrow the longer plan would see none.
+        (True, False, 12),
+        # 00:30, the window is open: the 12 h plan stays.
+        (False, True, 12),
+    ],
+)
+def test_time_slot_plan_reaches_the_horizon_of_a_window_not_yet_open(
+    before_open, dated_sun, plan_reaches_hours
+):
+    day = datetime(2026, 8, 24, 0, 0, tzinfo=MADRID)
+    now = day + (
+        timedelta(hours=23) if before_open else timedelta(days=1, minutes=30)
+    )
+    midnight = now.replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) + timedelta(days=1)
+    opens = day + timedelta(days=1)
+    window = PriceSlot(opens, opens + timedelta(hours=2), 0.0)
+    controller = _controller_for_projection(
+        now,
+        [ProjectionIntervalInput(now, now + timedelta(minutes=15))],
+        [],
+        [BatteryProjectionInput("a", 5, 10, 0, 100, 4000, 4000)],
+        _daily_operation_mode=lambda: "time_slot",
+    )
+    controller._pricing_mgr._time_slot_price_slots_for_horizon = (
+        lambda _now, _end: [window]
+    )
+    controller._pricing_mgr.time_slot_preview_horizon = (
+        lambda _now, start: start + timedelta(hours=32) if dated_sun else None
+    )
+
+    ChargeDischargeController._daily_operation_build_projection(controller, now)
+
+    assert controller._planner_calls[0]["horizon_end"] == (
+        opens + timedelta(hours=32)
+        if plan_reaches_hours == 32
+        else midnight + timedelta(hours=12)
+    )
 
 
 def test_projection_uses_live_sources_without_restoring_daily_diagnostics():
@@ -476,6 +524,7 @@ def test_weekly_full_charge_bypasses_delay_and_setpoint_projection_markers():
 
 def test_external_solar_does_not_hide_grid_charge_during_net_import():
     coordinator = SimpleNamespace(
+        driver=_FakeMarstekDriver(),
         capabilities=SimpleNamespace(has_mppt_pv=False, has_solar_telemetry=False),
         data={"ac_power": -600},
     )
@@ -511,6 +560,7 @@ def test_external_solar_does_not_hide_grid_charge_during_net_import():
 
 def test_external_solar_charge_uses_net_interval_energy_not_power_samples():
     coordinator = SimpleNamespace(
+        driver=_FakeMarstekDriver(),
         capabilities=SimpleNamespace(has_mppt_pv=False, has_solar_telemetry=False),
         data={"ac_power": -600},
     )
@@ -547,6 +597,7 @@ def test_external_solar_charge_uses_net_interval_energy_not_power_samples():
 
 def test_external_solar_charge_becomes_grid_after_material_import_energy():
     coordinator = SimpleNamespace(
+        driver=_FakeMarstekDriver(),
         capabilities=SimpleNamespace(has_mppt_pv=False, has_solar_telemetry=False),
         data={"ac_power": -600},
     )
@@ -595,7 +646,11 @@ def test_external_solar_charge_becomes_grid_after_material_import_energy():
 
 def test_direct_solar_and_ac_draw_are_both_reported_during_net_import():
     coordinator = SimpleNamespace(
-        capabilities=SimpleNamespace(has_mppt_pv=True, has_solar_telemetry=True),
+        driver=_FakeMarstekDriver(),
+        capabilities=SimpleNamespace(
+            has_mppt_pv=True,
+            mppt_power_keys=("mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power"),
+            has_solar_telemetry=True),
         data={"ac_power": -600, "mppt1_power": 800},
     )
     controller = SimpleNamespace(
@@ -811,4 +866,43 @@ def test_active_slot_projects_only_what_is_left_of_its_quota():
     # No load, so the battery ends with what is left of the quota.
     assert result["intervals"][-1]["stored_energy_end_kwh"] == pytest.approx(
         5.5 + 0.5, abs=1e-6
+    )
+
+
+def test_house_line_keeps_the_load_while_the_plan_idles_the_battery():
+    """Inside a Time Slot window the plan idles the battery (drain 0, solar
+    net of the house); the chart still draws the house and the whole sun."""
+    now = datetime(2026, 11, 15, 23, 45, tzinfo=MADRID)
+    midnight = now + timedelta(minutes=15)
+    window = midnight + timedelta(minutes=15)
+    intervals = [
+        ProjectionIntervalInput(now, midnight, consumption_kwh=0.1),
+        # 0.2 kWh house, 0.05 kWh sun: idled to (0, 0).
+        ProjectionIntervalInput(midnight, window, consumption_kwh=0.0),
+    ]
+    batteries = [BatteryProjectionInput("a", 5, 10, 0, 100, 4000, 4000)]
+    result = build_daily_operation_projection(
+        DailyOperationProjectionRequest(
+            now=now,
+            plan_intervals=tuple(intervals),
+            allocations=(),
+            battery_inputs=tuple(batteries),
+            mode="time_slot",
+            decision_data={},
+            house_forecast={now: (0.0, 0.1), midnight: (0.05, 0.2)},
+        )
+    )
+
+    today, tomorrow = result["intervals"][0], result["extended_intervals"][0]
+    assert today["consumption_kwh"] == pytest.approx(0.1)
+    assert today["battery_to_home_kwh"] == pytest.approx(0.1)
+    assert tomorrow["consumption_kwh"] == pytest.approx(0.2)
+    assert tomorrow["consumption_forecast_kwh"] == pytest.approx(0.2)
+    assert tomorrow["solar_kwh"] == pytest.approx(0.05)
+    assert tomorrow["solar_to_home_kwh"] == pytest.approx(0.05)
+    assert tomorrow["grid_to_home_kwh"] == pytest.approx(0.15)
+    # The battery still sits the window out.
+    assert tomorrow["battery_to_home_kwh"] == pytest.approx(0.0)
+    assert tomorrow["stored_energy_end_kwh"] == pytest.approx(
+        today["stored_energy_end_kwh"]
     )

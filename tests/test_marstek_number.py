@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from custom_components.omnibattery.number import (
-    MarstekManualSetPowerNumber,
+    ManualSetPowerNumber,
     MarstekVenusNumber,
     SoftSocLimitNumber,
 )
@@ -127,7 +127,11 @@ async def test_zendure_inverse_max_power_updates_effective_discharge_limit():
     coordinator.persist_battery_config = Mock()
 
     entity = object.__new__(MarstekVenusNumber)
-    entity.definition = {"key": "inverse_max_power", "max": 4000}
+    entity.definition = {
+        "key": "inverse_max_power",
+        "canonical_key": "max_discharge_power",
+        "max": 4000,
+    }
     entity.coordinator = coordinator
     entity.hass = SimpleNamespace(data={})
     entity._scale = 1.0
@@ -202,7 +206,7 @@ async def test_venus_e_max_power_write_keeps_hardware_selector_in_data():
     ],
 )
 def test_software_manual_slider_uses_configured_power_limit(kind, limit):
-    entity = object.__new__(MarstekManualSetPowerNumber)
+    entity = object.__new__(ManualSetPowerNumber)
     entity._kind = kind
     entity._hardware_max = 2500
     entity.coordinator = SimpleNamespace(

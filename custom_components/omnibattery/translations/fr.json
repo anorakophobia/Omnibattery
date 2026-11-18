@@ -50,6 +50,10 @@
       "title": "Le capteur de puissance réseau se met à jour trop lentement",
       "description": "Le capteur réseau configuré {sensor} se met à jour environ toutes les {observed_interval} secondes. Des intervalles de {warning_interval} secondes ou plus sont plus lents que recommandé et peuvent réduire la qualité de régulation. Omnibattery suit la dernière mesure jusqu'à ce qu'elle date de plus de {stale_limit} secondes. Utilisez un capteur plus rapide si vous avez besoin d'un contrôle temps réel plus précis."
     },
+    "planner_fallback": {
+      "title": "Le planificateur de charge est revenu à la sélection des heures les moins chères",
+      "description": "Le planificateur chronologique de charge a échoué ({error}). La charge prédictive continue de fonctionner, mais elle réserve désormais les heures les moins chères sans savoir quand l'énergie est nécessaire, et peut donc charger à des heures inhabituelles. Merci de le signaler sur GitHub avec les diagnostics de l'intégration. Ce message disparaît de lui-même dès que le planificateur refonctionne."
+    },
     "price_data_unusable": {
       "title": "Données tarifaires inutilisables",
       "description": "Omnibattery n'a pas pu lire de créneaux tarifaires exploitables depuis {sensor} pendant plus de {minutes} minutes (état : {status}). La charge pilotée par les prix est inactive : la planification en tarification dynamique et la libération du report de charge selon le prix reviennent à leur comportement sans prix. Vérifiez que le capteur est disponible et que son attribut de prix est une liste d'entrées ; un capteur de type template doit produire des horodatages ISO-8601, car un datetime Python rendu ne peut pas être reconverti en liste."
@@ -80,7 +84,7 @@
           "solar_forecast_remaining_sensor": "Capteur de prévision solaire restante aujourd'hui (recommandé)",
           "solar_production_sensor": "Capteur de production solaire (optionnel)",
           "meter_inverted": "Signe du compteur inversé",
-          "max_contracted_power": "Puissance maximale souscrite (W)",
+          "max_contracted_power": "Import réseau maximal (W)",
           "three_phase_enabled": "Activer la protection de courant triphasée"
         },
         "data_description": {
@@ -91,7 +95,7 @@
           "solar_forecast_remaining_sensor": "Capteur fournissant la production solaire encore attendue aujourd'hui en kWh. Lors de l'enregistrement, il remplace l'ancienne prévision de la journée entière et n'est jamais diminué de la production déjà mesurée.",
           "solar_production_sensor": "Capteur de puissance de production photovoltaïque en temps réel (W/kW) d'un onduleur externe non raccordé aux entrées MPPT de la batterie. Utilisé pour afficher le nœud Solaire dans le diagramme de flux d'énergie du tableau de bord. Laissez vide si vos panneaux alimentent directement le MPPT de la batterie.",
           "meter_inverted": "Activez cette option si votre compteur utilise la convention opposée : positif = exportation, négatif = importation. L'unité (W/kW) est détectée automatiquement.",
-          "max_contracted_power": "Puissance totale souscrite en watts. Le système ne dépassera pas cette limite lors de la charge pour éviter de déclencher le disjoncteur",
+          "max_contracted_power": "Puissance maximale que vous souhaitez tirer du réseau, en watts : votre puissance souscrite (ICP) ou, avec un tarif à capacité, votre pointe mensuelle. La charge depuis le réseau reste en dessous, et la batterie couvre la maison au-delà.",
           "three_phase_enabled": "Enveloppe de sécurité de courant optionnelle pour les installations triphasées ; configurez les capteurs et la phase physique de chaque batterie à l'étape suivante."
         }
       },
@@ -382,7 +386,7 @@
         "data_description": {
           "start_time": "Heure de début de la fenêtre de charge (ex : 01:00, tarif heures creuses)",
           "end_time": "Heure de fin de la fenêtre de charge (ex : 06:00)",
-          "days": "Jours où la charge depuis le réseau est autorisée",
+          "days": "Jours où la charge depuis le réseau est autorisée. Pour une plage qui franchit minuit, chaque jour sélectionné couvre son petit matin (jusqu'à l'heure de fin) et sa nuit (à partir de l'heure de début).",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). Avec panneaux solaires : configurez ce capteur — le système ne chargera depuis le réseau que si la prévision est insuffisante. Sans panneaux solaires : laissez vide — le système chargera quand l'énergie de la batterie est insuffisante pour la journée. Non requis si ce capteur a déjà été configuré à l'étape initiale — il sera utilisé automatiquement."
         }
       },
@@ -495,21 +499,19 @@
       },
       "capacity_protection": {
         "title": "Mode écrêtement de pointe",
-        "description": "Si activé, lorsque le SOC de la batterie descend en dessous d'un seuil, le système économise l'énergie en ne déchargeant que pour compenser la consommation dépassant une limite de pointe.",
+        "description": "Si activé, lorsque le SOC de la batterie descend sous un seuil, la batterie garde sa charge restante pour les pointes : elle ne couvre plus la consommation ordinaire et ne couvre que la charge au-dessus de l'import réseau maximal.",
         "data": {
           "configure_capacity_protection": "Activer l'écrêtement de pointe"
         }
       },
       "capacity_protection_config": {
         "title": "Configuration de l'écrêtement de pointe",
-        "description": "Configurez le seuil de SOC en dessous duquel l'écrêtement de pointe s'active et la limite de puissance de pointe. La batterie ne déchargera que pour maintenir l'importation réseau en dessous de la limite.",
+        "description": "Configurez le seuil de SOC en dessous duquel la batterie garde sa charge restante pour les pointes et ne couvre que la consommation au-dessus de l'import réseau maximal.",
         "data": {
-          "capacity_protection_soc_threshold": "Seuil de SOC (%)",
-          "capacity_protection_limit": "Limite de pointe (W)"
+          "capacity_protection_soc_threshold": "Seuil de SOC (%)"
         },
         "data_description": {
-          "capacity_protection_soc_threshold": "Lorsque le SOC moyen des batteries descend en dessous de cette valeur, l'écrêtement de pointe s'active. La batterie cessera de décharger pour la consommation normale et ne couvrira que les pointes au-dessus de la limite.",
-          "capacity_protection_limit": "Seuil de puissance d'importation réseau. Lorsque la consommation de la maison dépasse cette valeur et que l'écrêtement de pointe est actif, la batterie ne décharge que l'excès au-dessus de cette limite."
+          "capacity_protection_soc_threshold": "Lorsque le SOC moyen des batteries descend en dessous de cette valeur, la batterie ne couvre plus la consommation ordinaire et ne couvre que la charge au-dessus de l'import réseau maximal."
         }
       },
       "pd_advanced": {
@@ -882,7 +884,7 @@
           "solar_forecast_remaining_sensor": "Capteur de prévision solaire restante aujourd'hui (recommandé)",
           "solar_production_sensor": "Capteur de production solaire (optionnel)",
           "meter_inverted": "Signe du compteur inversé",
-          "max_contracted_power": "Puissance maximale souscrite (W)",
+          "max_contracted_power": "Import réseau maximal (W)",
           "three_phase_enabled": "Activer la protection de courant triphasée"
         },
         "data_description": {
@@ -893,7 +895,7 @@
           "solar_forecast_remaining_sensor": "Capteur fournissant la production solaire encore attendue aujourd'hui en kWh. Lors de l'enregistrement, il remplace l'ancienne prévision de la journée entière et n'est jamais diminué de la production déjà mesurée.",
           "solar_production_sensor": "Capteur de puissance de production photovoltaïque en temps réel (W/kW) d'un onduleur externe non raccordé aux entrées MPPT de la batterie. Utilisé pour afficher le nœud Solaire dans le diagramme de flux d'énergie du tableau de bord. Laissez vide si vos panneaux alimentent directement le MPPT de la batterie.",
           "meter_inverted": "Activez cette option si votre compteur utilise la convention opposée : positif = exportation, négatif = importation. L'unité (W/kW) est détectée automatiquement.",
-          "max_contracted_power": "Puissance totale souscrite en watts. Le système ne dépassera pas cette limite lors de la charge pour éviter de déclencher le disjoncteur",
+          "max_contracted_power": "Puissance maximale que vous souhaitez tirer du réseau, en watts : votre puissance souscrite (ICP) ou, avec un tarif à capacité, votre pointe mensuelle. La charge depuis le réseau reste en dessous, et la batterie couvre la maison au-delà.",
           "three_phase_enabled": "Enveloppe de sécurité de courant optionnelle pour les installations triphasées ; configurez les capteurs et la phase physique de chaque batterie à l'étape suivante."
         }
       },
@@ -1161,7 +1163,7 @@
         "data_description": {
           "start_time": "Heure de début de la fenêtre de charge (ex : 01:00, tarif heures creuses)",
           "end_time": "Heure de fin de la fenêtre de charge (ex : 06:00)",
-          "days": "Jours où la charge depuis le réseau est autorisée",
+          "days": "Jours où la charge depuis le réseau est autorisée. Pour une plage qui franchit minuit, chaque jour sélectionné couvre son petit matin (jusqu'à l'heure de fin) et sa nuit (à partir de l'heure de début).",
           "solar_forecast_sensor": "Capteur fournissant la prévision de production solaire en kWh (ex : Solcast). Avec panneaux solaires : configurez ce capteur — le système ne chargera depuis le réseau que si la prévision est insuffisante. Sans panneaux solaires : laissez vide — le système chargera quand l'énergie de la batterie est insuffisante pour la journée. Non requis si ce capteur a déjà été configuré à l'étape initiale — il sera utilisé automatiquement."
         }
       },
@@ -1274,21 +1276,19 @@
       },
       "capacity_protection": {
         "title": "Mode écrêtement de pointe",
-        "description": "Si activé, lorsque le SOC de la batterie descend en dessous d'un seuil, le système économise l'énergie en ne déchargeant que pour compenser la consommation dépassant une limite de pointe.",
+        "description": "Si activé, lorsque le SOC de la batterie descend sous un seuil, la batterie garde sa charge restante pour les pointes : elle ne couvre plus la consommation ordinaire et ne couvre que la charge au-dessus de l'import réseau maximal.",
         "data": {
           "configure_capacity_protection": "Activer l'écrêtement de pointe"
         }
       },
       "capacity_protection_config": {
         "title": "Configuration de l'écrêtement de pointe",
-        "description": "Configurez le seuil de SOC en dessous duquel l'écrêtement de pointe s'active et la limite de puissance de pointe. La batterie ne déchargera que pour maintenir l'importation réseau en dessous de la limite.",
+        "description": "Configurez le seuil de SOC en dessous duquel la batterie garde sa charge restante pour les pointes et ne couvre que la consommation au-dessus de l'import réseau maximal.",
         "data": {
-          "capacity_protection_soc_threshold": "Seuil de SOC (%)",
-          "capacity_protection_limit": "Limite de pointe (W)"
+          "capacity_protection_soc_threshold": "Seuil de SOC (%)"
         },
         "data_description": {
-          "capacity_protection_soc_threshold": "Lorsque le SOC moyen des batteries descend en dessous de cette valeur, l'écrêtement de pointe s'active. La batterie cessera de décharger pour la consommation normale et ne couvrira que les pointes au-dessus de la limite.",
-          "capacity_protection_limit": "Seuil de puissance d'importation réseau. Lorsque la consommation de la maison dépasse cette valeur et que l'écrêtement de pointe est actif, la batterie ne décharge que l'excès au-dessus de cette limite."
+          "capacity_protection_soc_threshold": "Lorsque le SOC moyen des batteries descend en dessous de cette valeur, la batterie ne couvre plus la consommation ordinaire et ne couvre que la charge au-dessus de l'import réseau maximal."
         }
       },
       "pd_advanced": {
@@ -1588,6 +1588,9 @@
       "capacity_protection": {
         "name": "Écrêtement de Pointe"
       },
+      "grid_import_window_15min": {
+        "name": "Fenêtre de 15 min d'Import Réseau"
+      },
       "capacity_protection_excluded_devices": {
         "name": "Écrêtement des Pointes pour Appareils Exclus"
       },
@@ -1780,7 +1783,8 @@
           "delayed": "Retardé",
           "charging_allowed": "Charge autorisée",
           "skipped_full_charge_day": "Ignoré – Jour de charge complète",
-          "charging_to_setpoint": "Charge jusqu'au seuil"
+          "charging_to_setpoint": "Charge jusqu'au seuil",
+          "planned": "Planifié par l'optimiseur"
         }
       },
       "high_price_discharge_status": {
@@ -2734,7 +2738,7 @@
         "name": "Puissance maximale de decharge du systeme"
       },
       "max_contracted_power": {
-        "name": "Puissance Contractuelle Max."
+        "name": "Import Réseau Maximal"
       },
       "capacity_protection_soc_threshold": {
         "name": "Écrêtement de Pointe – Seuil SOC"
@@ -2756,9 +2760,6 @@
       },
       "temp_charge_limit_floor_pct": {
         "name": "Puissance de charge minimale"
-      },
-      "capacity_protection_limit": {
-        "name": "Écrêtement de Pointe – Limite"
       },
       "backup_offgrid_threshold": {
         "name": "Seuil Offgrid Backup"

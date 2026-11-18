@@ -21,7 +21,9 @@ import time
 import pytest
 
 from custom_components.omnibattery.const import BURST_POLL_WINDOW_S
-from custom_components.omnibattery.drivers import DriverCapabilities
+from custom_components.omnibattery.drivers import BatteryDriver, DriverCapabilities
+from custom_components.omnibattery.drivers.base import LFP_CELL_VOLTAGE_PROFILE
+from custom_components.omnibattery.drivers.registry import traits_for_brand
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -126,6 +128,22 @@ class _FakeMarstekDriver:
             return -int(round(float(discharge)))
         return 0
 
+    inverter_status = BatteryDriver.inverter_status
+    backup_enabled = BatteryDriver.backup_enabled
+    is_self_managed = BatteryDriver.is_self_managed
+    active_alarms = BatteryDriver.active_alarms
+    device_max_soc = BatteryDriver.device_max_soc
+    ac_contribution_w = BatteryDriver.ac_contribution_w
+    critical_control_keys = BatteryDriver.critical_control_keys
+    forcible_power_from_data = BatteryDriver.forcible_power_from_data
+    manual_control_by_registers = True
+
+    @staticmethod
+    def ac_register_power_w(data: dict):
+        # Marstek's ``ac_power`` is +discharge; the query speaks +charge.
+        value = data.get("ac_power")
+        return None if value is None else -float(value)
+
     @property
     def control_dependency_keys(self) -> frozenset:
         return frozenset({
@@ -134,6 +152,13 @@ class _FakeMarstekDriver:
             "force_mode",
             "charging_cutoff_capacity", "discharging_cutoff_capacity",
         })
+
+
+def fake_traits(brand, battery_version):
+    """``coordinator.traits`` for a double: the registry's traits for this brand and
+    stored version, the same derivation the real coordinator uses (stale keys
+    included)."""
+    return traits_for_brand(brand, {"brand": brand, "battery_version": battery_version})
 
 
 class FakeCoordinator:
@@ -159,6 +184,7 @@ class FakeCoordinator:
         "host": "1.2.3.4",
         "port": 502,
         "slave_id": 1,
+        "brand": "marstek",
         "battery_version": "v2",
         "data": None,
         "is_available": True,
@@ -193,6 +219,12 @@ class FakeCoordinator:
         self.boost_fast_poll_until = time.monotonic() + BURST_POLL_WINDOW_S
 
     @property
+    def traits(self):
+        """Mirror ``coordinator.traits``: the registry's traits for this brand and
+        stored version (so the same derivations as production, stale keys included)."""
+        return fake_traits(self.brand, self.battery_version)
+
+    @property
     def driver(self) -> _FakeMarstekDriver:
         return _FakeMarstekDriver()
 
@@ -214,9 +246,15 @@ class FakeCoordinator:
             max_charge_power_w=self.max_charge_power,
             max_discharge_power_w=self.max_discharge_power,
             has_mppt_pv=has_pv,
+            mppt_power_keys=(
+                ("mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power")
+                if has_pv
+                else ()
+            ),
             has_alarm_registers=self.battery_version == "v2",
             has_rs485_control=True,
             actuator_latency_s=0.8 if v3_family else 0.3,
+            cell_voltage_profile=LFP_CELL_VOLTAGE_PROFILE,
         )
 
 

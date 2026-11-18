@@ -3,7 +3,7 @@
 Three Indevolt settings have an Omnibattery counterpart: the reserve (min SOC),
 the max AC input (max charge power) and the max AC output (max discharge power).
 They live in the battery's flash, so they are written only on a direct user
-action (see FLASH WEAR in ``infra/indevolt_client.py``):
+action (see FLASH WEAR in ``drivers/indevolt_client.py``):
 
 * **Omnibattery -> device:** a number entity or an options-flow save requests a
   value. After a debounce the value is compared with what the device holds and
@@ -31,7 +31,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from ..infra.indevolt_client import CONFIG_WRITE_POINTS, IndevoltClient, IndevoltError
+from .indevolt_client import CONFIG_WRITE_POINTS, IndevoltClient, IndevoltError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,25 +87,6 @@ class SettingsNotifier(Protocol):
     def setting_ok(self, key: str) -> None: ...
     def flash_writes_paused(self, allowance: int) -> None: ...
     def flash_writes_resumed(self) -> None: ...
-
-
-def stored_battery_value(coordinator: Any, key: str) -> Any:
-    """Read one key of this coordinator's battery config (None when unknown)."""
-    entry = getattr(coordinator, "_config_entry", None)
-    data = getattr(entry, "data", None)
-    # Home Assistant hands out entry data as a read-only MappingProxyType, not a dict.
-    if not isinstance(data, Mapping):
-        return None
-    for battery in data.get("batteries", []):
-        if not isinstance(battery, Mapping):
-            continue
-        if (
-            battery.get("host") == coordinator.host
-            and battery.get("port") == coordinator.port
-            and battery.get("slave_id", 1) == getattr(coordinator, "slave_id", 1)
-        ):
-            return battery.get(key)
-    return None
 
 
 class IndevoltSettings:

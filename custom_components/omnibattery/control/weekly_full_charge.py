@@ -20,17 +20,22 @@ from datetime import date, datetime, timedelta
 from time import monotonic
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.components import persistent_notification
 from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
 
-from .pack_soc import control_vmax, soc_vs_ceiling
+from ..infra.clock import local_now
+from .charge_delay import _PROVISIONAL_ZERO_HOLD_HOUR, _energy_needed_kwh
+from .pack_soc import cell_voltage_profile, control_vmax, soc_vs_ceiling
 from ..const import (
     DISCHARGE_ENGAGE_GRACE_S,
     DOMAIN,
-    NORMAL_BALANCE_BMS_CUTOFF_VERSIONS,
     NORMAL_BALANCE_RECAL_CUTOFF_CYCLES,
-    NORMAL_BALANCE_TAPER_CELL_VOLTAGE,
+    NOTIFICATION_ID_PREFIX,
     WEEKDAY_MAP,
 )
+from ..drivers.base import InverterStatus
+from ..solar_forecast import read_remaining_solar_kwh
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -38,8 +43,6 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# Inverter state raw value for "Standby" (BMS has cut off, no active charge/discharge).
-_INVERTER_STATE_STANDBY = 1
 # Battery power below this (W) is treated as "not charging" for BMS-cutoff detection.
 _BMS_CUTOFF_POWER_W = 10
 # Refusal samples (one per control cycle) required before declaring completion at
@@ -51,6 +54,8 @@ _BMS_CUTOFF_REQUIRED_CYCLES = NORMAL_BALANCE_RECAL_CUTOFF_CYCLES
 # controller's clock, not by reading age: a driver that serves a cached device
 # state makes every poll look fresh.
 _BMS_CUTOFF_CONFIRM_S = 10
+_OUTLOOK_NOTIFICATION_ID = f"{NOTIFICATION_ID_PREFIX}weekly_full_charge_solar"
+_OUTLOOK_KEYS = ("solar_sufficient", "energy_needed_kwh", "net_solar_kwh")
 
 
 class WeeklyFullChargeManager:
@@ -164,11 +169,14 @@ class WeeklyFullChargeManager:
             # packs are still filling, so a lull in acceptance during a handover
             # would be counted as a cutoff at 89% SOC.
             vmax = control_vmax(c)
-            in_taper_zone = vmax is not None and vmax >= NORMAL_BALANCE_TAPER_CELL_VOLTAGE
+            in_taper_zone = (
+                vmax is not None
+                and vmax >= cell_voltage_profile(c).taper_entry_v
+            )
             if soc >= 99 or in_taper_zone:
                 power = c.data.get("battery_power", None)
                 inv_state = c.data.get("inverter_state", None)
-                is_zendure = getattr(c, "brand", None) == "zendure"
+                inverter = c.driver.inverter_status(c.data)
                 # A real top-of-charge cutoff only counts when we are actually
                 # commanding the battery to charge but it refuses (≤10 W +
                 # Standby). A battery that is merely idle — not allocated charge
@@ -182,11 +190,15 @@ class WeeklyFullChargeManager:
                     and commanded > _BMS_CUTOFF_POWER_W
                     and power <= _BMS_CUTOFF_POWER_W
                     and (
-                        inv_state == _INVERTER_STATE_STANDBY
+                        inverter is InverterStatus.STANDBY
                         # Zendure's local API has no inverter_state field.  Its
                         # commanded setpoint is the equivalent idle guard, and
                         # the SOC >= 99 gate above prevents lower-SOC false hits.
-                        or (is_zendure and inv_state is None and soc >= 99)
+                        or (
+                            c.traits.cutoff_without_inverter_state
+                            and inv_state is None
+                            and soc >= 99
+                        )
                     )
                 )
                 if cutoff and now - charge_commanded_at[c.name] < self._engage_grace_s(c):
@@ -365,7 +377,7 @@ class WeeklyFullChargeManager:
         if not ctrl.weekly_full_charge_complete:
             self._already_complete_logged = False
 
-        now = datetime.now()
+        now = local_now()
         current_weekday = now.weekday()
         target_weekday = WEEKDAY_MAP[ctrl.weekly_full_charge_day]
 
@@ -395,6 +407,7 @@ class WeeklyFullChargeManager:
             ctrl._force_full_charge = False
             ctrl._weekly_charge_status["state"] = "Idle"
             ctrl._weekly_charge_status.pop("completion_reason", None)
+            self._clear_solar_outlook()
             # Save the cleared state asynchronously (don't await to avoid blocking)
             self._create_background_task(
                 self.save_state(), "omnibattery_weekly_charge_state_save"
@@ -421,6 +434,95 @@ class WeeklyFullChargeManager:
         # Active: on target day and not yet complete
         return True
 
+    def update_solar_outlook(self, batteries: list) -> None:
+        """Will today's remaining sun alone fill ``batteries`` to 100%? (#876)
+
+        Publishes ``solar_sufficient`` (absent = unknown) and the kWh behind it
+        on the weekly status sensor, so an automation can buy the gap from the
+        grid, and notifies once per run while Predictive Charging, the only
+        built-in grid path, is off. Bare balance, no safety factor: False means
+        the forecast does not cover the gap. Recomputed only when the remaining
+        forecast moves by more than 0.25 kWh.
+        """
+        ctrl = self._controller
+        now = dt_util.now()
+        # After the target day, "remaining today" is tomorrow's sun: keep the verdict.
+        if self.in_overnight_extension(now):
+            return
+        forecast = read_remaining_solar_kwh(ctrl.hass, ctrl, now=now, update_controller=False)
+        if forecast.source == "fallback":
+            return  # no forecast sensor, or briefly unavailable: keep the last verdict
+        solar_kwh = forecast.remaining_kwh
+        now_h = now.hour + now.minute / 60.0
+        if solar_kwh <= 1e-9 and now_h < _PROVISIONAL_ZERO_HOLD_HOUR:
+            return  # the provider has not published today's budget yet (#457)
+        cached = getattr(self, "_outlook_forecast_kwh", None)
+        if cached is not None and abs(solar_kwh - cached) <= 0.25:
+            return
+        self._outlook_forecast_kwh = solar_kwh
+
+        # Same inputs as the charge delay's solar balance (charge_delay.py).
+        delay = ctrl._charge_delay_mgr
+        solar_kwh -= delay._excluded_claim_kwh(solar_kwh)
+        tracker = ctrl._consumption_tracker
+        t_end = tracker.estimate_t_end()
+        profile = delay._profile_forecast_between(now_h, t_end)
+        if profile is not None:
+            consumption_kwh = profile.energy_kwh
+        else:
+            window_h = tracker.get_consumption_window_hours_per_day()
+            consumption_kwh = (
+                tracker.get_avg_daily_consumption()
+                * tracker.consumption_window_hours_in_range(now_h, t_end)
+                / window_h
+                if window_h > 0 and t_end > now_h
+                else 0.0
+            )
+        needed_kwh = max(0.0, _energy_needed_kwh(batteries, 100))
+        net_kwh = solar_kwh - consumption_kwh
+        sufficient = needed_kwh <= 0 or net_kwh >= needed_kwh
+        status = ctrl._weekly_charge_status
+        changed = status.get("solar_sufficient") != sufficient
+        status.update(
+            solar_sufficient=sufficient,
+            energy_needed_kwh=round(needed_kwh, 2),
+            net_solar_kwh=round(net_kwh, 2),
+        )
+        _LOGGER.log(
+            logging.INFO if changed else logging.DEBUG,
+            "Weekly Full Charge: solar outlook net=%.2f kWh vs needed=%.2f kWh -> %s",
+            net_kwh, needed_kwh, "sufficient" if sufficient else "insufficient",
+        )
+        notified = getattr(self, "_outlook_notified", False)
+        if sufficient and notified:
+            # A late or revised forecast now covers the gap: the warning is wrong.
+            # The flag stays set, so a forecast hovering at the edge warns once a run.
+            persistent_notification.async_dismiss(ctrl.hass, _OUTLOOK_NOTIFICATION_ID)
+        if sufficient or notified or ctrl.predictive_charging_enabled:
+            return
+        self._outlook_notified = True
+        persistent_notification.async_create(
+            ctrl.hass,
+            (
+                f"Today's remaining solar ({net_kwh:.1f} kWh after home consumption) "
+                f"will not cover the {needed_kwh:.1f} kWh still needed to reach 100%. "
+                "With Predictive Charging off, the weekly full charge does not charge "
+                "from the grid. Enable Predictive Charging, or let an automation act on "
+                "the solar_sufficient attribute of the Weekly Full Charge sensor."
+            ),
+            title="Weekly Full Charge: not enough solar",
+            notification_id=_OUTLOOK_NOTIFICATION_ID,
+        )
+
+    def _clear_solar_outlook(self) -> None:
+        """Drop the run's solar verdict and its notification."""
+        for key in _OUTLOOK_KEYS:
+            self._controller._weekly_charge_status.pop(key, None)
+        self._outlook_forecast_kwh = None
+        if getattr(self, "_outlook_notified", False):
+            self._outlook_notified = False
+            persistent_notification.async_dismiss(self._controller.hass, _OUTLOOK_NOTIFICATION_ID)
+
     async def load_state(self) -> None:
         """Load persisted weekly charge state from storage.
 
@@ -442,7 +544,7 @@ class WeeklyFullChargeManager:
             # A run saved on the target day carries on in the night after it.
             same_run = stored_date == today_iso or (
                 stored_date == (date.today() - timedelta(days=1)).isoformat()
-                and self.in_overnight_extension(datetime.now())
+                and self.in_overnight_extension(local_now())
             )
 
             # Only restore state if saved on the same calendar date (prevents last week's
@@ -504,7 +606,7 @@ class WeeklyFullChargeManager:
             return
 
         try:
-            now = datetime.now()
+            now = local_now()
             data = {
                 "complete": ctrl.weekly_full_charge_complete,
                 "registers_written": ctrl.weekly_full_charge_registers_written,
@@ -551,7 +653,9 @@ class WeeklyFullChargeManager:
         config may be older, because the device's own Target SOC entity writes
         only the device.
         """
-        if "soc_set" in (getattr(coordinator, "data", None) or {}):
+        if coordinator.driver.device_max_soc(
+            getattr(coordinator, "data", None) or {}
+        ) is not None:
             try:
                 live = int(getattr(coordinator, "max_soc", 100))
             except (TypeError, ValueError):
@@ -659,9 +763,11 @@ class WeeklyFullChargeManager:
                 ctrl._weekly_charge_status.pop("completion_reason", None)
             await self.save_state()
 
-        if not ctrl.weekly_full_charge_enabled and not ctrl._force_full_charge:
-            return
-        if not self.is_active():
+        if (
+            not ctrl.weekly_full_charge_enabled and not ctrl._force_full_charge
+        ) or not self.is_active():
+            # A verdict left behind would keep an automation buying from the grid.
+            self._clear_solar_outlook()
             return
 
         automatic_batteries = [
@@ -675,12 +781,17 @@ class WeeklyFullChargeManager:
             # returns to the automatic pool.
             ctrl._weekly_charge_status["state"] = "Idle"
             ctrl._weekly_charge_status.pop("completion_reason", None)
+            self._clear_solar_outlook()
             return
+
+        # Before the delay gate below: the verdict must not wait for a charge attempt.
+        self.update_solar_outlook(automatic_batteries)
 
         # Check if unified charge delay is active - if so, don't write registers yet
         # Skip delay logic when force button was pressed
         if (ctrl.charge_delay_enabled and not ctrl._charge_delay_unlocked
-                and not ctrl._force_full_charge and not ctrl._balance_monitor_overrides_delay()):
+                and not ctrl._force_full_charge and not ctrl._balance_monitor_overrides_delay()
+                and not getattr(ctrl, "_weekly_delay_released", False)):
             return  # Delay is handled by _is_charge_delayed() in _is_operation_allowed()
 
         # Write register 44000 to 100% on first activation (v2 only - v3 uses software enforcement).
@@ -801,6 +912,11 @@ class WeeklyFullChargeManager:
         ctrl.weekly_full_charge_complete = True
         ctrl._weekly_charge_status["state"] = "Complete"
         ctrl._weekly_charge_status["completion_reason"] = reason
+        self._clear_solar_outlook()
+        # D-9: the plan in force charges to 100 % and holds for the run;
+        # re-plan now with max_soc (the configuration-change trigger, no settle).
+        ctrl._dp_config_dirty = True
+        ctrl._dp_config_dirty_at = 0.0
         completion_batteries: dict = {}
         for coordinator in ctrl.coordinators:
             if getattr(coordinator, "battery_manual_mode_enabled", False):
@@ -832,6 +948,7 @@ class WeeklyFullChargeManager:
         if measurement_state is not None:
             for coordinator in ctrl.coordinators:
                 data = coordinator.data or {}
+                profile = cell_voltage_profile(coordinator)
                 try:
                     vmax = float(data.get("max_cell_voltage"))
                 except (TypeError, ValueError):
@@ -840,15 +957,15 @@ class WeeklyFullChargeManager:
                     ctrl, "_normal_balance_voltage_tapered", {}
                 ).get(coordinator, False)
                 in_taper_zone = (
-                    vmax is not None
-                    and vmax >= NORMAL_BALANCE_TAPER_CELL_VOLTAGE
+                    profile is not None
+                    and vmax is not None
+                    and vmax >= profile.taper_entry_v
                 )
                 if (
                     self._bms_cutoff_counts.get(coordinator.name, 0)
                     >= _BMS_CUTOFF_REQUIRED_CYCLES
                     and (
-                        getattr(coordinator, "battery_version", None)
-                        in NORMAL_BALANCE_BMS_CUTOFF_VERSIONS
+                        coordinator.traits.bms_owns_top_cutoff
                         or in_taper_zone
                         or taper_latched
                     )

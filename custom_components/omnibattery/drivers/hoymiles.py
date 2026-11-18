@@ -19,13 +19,17 @@ from homeassistant.components import mqtt
 from homeassistant.core import HomeAssistant, callback
 
 from .base import (
+    BATTERY_DC_POWER_KEY,
     DELIVERED_AC_POWER_KEY,
     BatteryDriver,
     DriverCapabilities,
+    DriverContext,
+    DriverTraits,
     ReadGroup,
     SetpointResult,
     TelemetrySnapshot,
 )
+from .hoymiles_flow import HOYMILES_SETUP
 
 _LOGGER = logging.getLogger(__name__)
 _DEFAULT_MAX_POWER_W = 1000
@@ -188,6 +192,25 @@ SENSOR_DEFINITIONS: list[dict] = [
 class HoymilesMqttDriver(BatteryDriver):
     """Push telemetry and external-power control for one Hoymiles system."""
 
+    BRAND = "hoymiles"
+    SETUP = HOYMILES_SETUP
+    TRAITS = DriverTraits(
+        supports_voltage_taper=False, capacity_field="optional", min_soc_range=(0, 30, 10)
+    )
+    LABEL = "Hoymiles MQTT"
+    MANUFACTURER = "Hoymiles"
+    DEFAULT_MODEL = "MS-A2"
+
+    @classmethod
+    def from_config(cls, battery_config, context: DriverContext) -> "HoymilesMqttDriver":
+        return cls(
+            context.hass,
+            battery_config["host"],
+            model=battery_config.get("hoymiles_model"),
+            max_charge_power_w=context.max_charge_power_w,
+            max_discharge_power_w=context.max_discharge_power_w,
+        )
+
     def __init__(self, hass: HomeAssistant, device_id: str, *, model: str | None = None,
                  max_charge_power_w: int | None = None,
                  max_discharge_power_w: int | None = None) -> None:
@@ -219,11 +242,12 @@ class HoymilesMqttDriver(BatteryDriver):
         self._keepalive_task: asyncio.Task | None = None
         self._last_net_power_w: int | None = None
         # Telemetry-only key: no entity, but the control layer needs it polled
-        # alongside battery_power to judge delivery at the AC port.
+        # alongside battery_power to judge delivery at the AC port (and the DC plane
+        # of the efficiency).
         self._read_groups = [ReadGroup(
             "high",
             tuple(d["key"] for d in SENSOR_DEFINITIONS)
-            + (DELIVERED_AC_POWER_KEY, "battery_total_energy"),
+            + (DELIVERED_AC_POWER_KEY, BATTERY_DC_POWER_KEY, "battery_total_energy"),
         )]
 
     @property
@@ -379,8 +403,23 @@ class HoymilesMqttDriver(BatteryDriver):
                                ("pack_num", "pack_count")):
             value = self._number(data, source)
             if value is not None: self._cache[target] = value
+        self._refresh_dc_power()
         if self._number(data, "pack_num") is not None:
             self._refresh_capacity()
+
+    def _refresh_dc_power(self) -> None:
+        """Publish the cell-side power from voltage x current (issue #625).
+
+        ``battery_power`` (sys_bat_p) is AC-side on this unit, so it cannot be
+        the DC plane of the efficiency. The sign of ``bat_i`` is not confirmed,
+        so the direction comes from ``battery_power`` and only |V x I| is used.
+        """
+        volts = self._cache.get("battery_voltage")
+        amps = self._cache.get("battery_current")
+        power = self._cache.get("battery_power")
+        if volts is None or amps is None or power is None: return
+        magnitude = abs(volts * amps)
+        self._cache[BATTERY_DC_POWER_KEY] = magnitude if power > 0 else -magnitude if power < 0 else 0.0
 
     def _refresh_capacity(
         self,
@@ -528,7 +567,9 @@ class HoymilesMqttDriver(BatteryDriver):
         power = self._number(data, "sys_bat_p")
         if power is None: power = self._number(data, "bat_p")
         if soc is not None: self._cache["battery_soc"] = soc
-        if power is not None: self._cache["battery_power"] = -power
+        if power is not None:
+            self._cache["battery_power"] = -power
+            self._refresh_dc_power()
         # On-grid port exchange, same sign convention as battery_power. sys_bat_p
         # is cell power, so on a unit with PV (or a microinverter on the off-grid
         # port) feeding the DC bus it reads "charging" while the AC port delivers

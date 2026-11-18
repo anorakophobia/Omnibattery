@@ -22,7 +22,7 @@ from custom_components.omnibattery.drivers.huawei import (
     _PV_PROBE_SETTLE_S,
     _PV_PROBE_WINDOW_S,
 )
-from custom_components.omnibattery.infra.huawei_modbus_client import (
+from custom_components.omnibattery.drivers.huawei_client import (
     decode_i16,
     decode_i32,
     decode_string,
@@ -609,7 +609,7 @@ async def test_apply_config_writes_both_cutoffs():
 # had just read from the inverter ("Value 7000.0 is too large").
 # ----------------------------------------------------------------------
 def test_power_ceilings_follow_the_probed_hardware():
-    from custom_components.omnibattery.config_flow import _huawei_power_ceilings
+    from custom_components.omnibattery.drivers.huawei_flow import _huawei_power_ceilings
 
     assert _huawei_power_ceilings(
         {"device_max_charge_power": 7000, "device_max_discharge_power": 7000}
@@ -617,7 +617,7 @@ def test_power_ceilings_follow_the_probed_hardware():
 
 
 def test_power_ceilings_fall_back_and_stay_sane():
-    from custom_components.omnibattery.config_flow import _huawei_power_ceilings
+    from custom_components.omnibattery.drivers.huawei_flow import _huawei_power_ceilings
 
     # No probe data at all.
     assert _huawei_power_ceilings({}) == (5000, 5000)
@@ -655,7 +655,11 @@ def test_device_info_reports_huawei_as_the_manufacturer():
         device_key="192.168.1.10_2502_4",
         name="Huawei LUNA2000",
         brand="huawei",
-        driver=SimpleNamespace(model_label="SUN2000-8K-MAP0"),
+        driver=SimpleNamespace(
+            model_label="SUN2000-8K-MAP0", MANUFACTURER="Huawei",
+            DEFAULT_MODEL="Venus", configuration_url=None,
+            software_version=lambda data: None,
+        ),
         host="192.168.1.10",
         port=2502,
         data={},
@@ -667,7 +671,9 @@ def test_device_info_reports_huawei_as_the_manufacturer():
     assert "serial_number" not in info
 
     coordinator.driver = SimpleNamespace(
-        model_label="SUN2000-8K-MAP0", serial="TA2470074124"
+        model_label="SUN2000-8K-MAP0", serial="TA2470074124",
+        MANUFACTURER="Huawei", DEFAULT_MODEL="Venus", configuration_url=None,
+        software_version=lambda data: None,
     )
     info = MarstekVenusDataUpdateCoordinator.battery_device_info.fget(coordinator)
     assert info["serial_number"] == "TA2470074124"
@@ -1479,18 +1485,18 @@ def test_the_slave_id_field_is_empty_by_default():
     not derivable, and a wrong one reads a charger or an energy manager.
     """
     import voluptuous as vol
-    from custom_components.omnibattery.config_flow import MarstekVenusConfigFlow
+    from custom_components.omnibattery.drivers.huawei_flow import _huawei_schema
 
-    schema = MarstekVenusConfigFlow._huawei_schema({}, 1)
+    schema = _huawei_schema({}, 1)
     marker = next(m for m in schema.schema if m.schema == "slave_id")
     assert marker.default is vol.UNDEFINED
     assert (marker.description or {}).get("suggested_value") is None
 
 
 def test_an_existing_slave_id_is_offered_again_on_reconfigure():
-    from custom_components.omnibattery.config_flow import MarstekVenusConfigFlow
+    from custom_components.omnibattery.drivers.huawei_flow import _huawei_schema
 
-    schema = MarstekVenusConfigFlow._huawei_schema({"slave_id": 4}, 1)
+    schema = _huawei_schema({"slave_id": 4}, 1)
     marker = next(m for m in schema.schema if m.schema == "slave_id")
     assert marker.description["suggested_value"] == 4
 
@@ -1536,11 +1542,11 @@ def _huawei_flow(monkeypatch, *, probe, devices=None, huawei_solar_installed=Tru
             async_entries=lambda domain: [object()] if huawei_solar_installed else []
         )
     )
-    monkeypatch.setattr(mod.HuaweiSolarDriver, "probe", AsyncMock(return_value=probe))
+    monkeypatch.setattr(HuaweiSolarDriver, "probe", AsyncMock(return_value=probe))
     # Never let a flow test reach for the network: the EMMA scan would sit on
     # connection timeouts for every candidate id.
     monkeypatch.setattr(
-        mod.HuaweiSolarDriver, "find_emma_slave_id", AsyncMock(return_value=emma)
+        HuaweiSolarDriver, "find_emma_slave_id", AsyncMock(return_value=emma)
     )
     registry = MagicMock()
     registry.async_get.side_effect = (devices or {}).get
@@ -1688,27 +1694,27 @@ def test_both_new_errors_are_explained_in_every_language():
 
 
 def test_the_options_flow_carries_the_same_huawei_logic():
-    """Both flows hold their own copy of these steps; they must not drift.
+    """Both flows run the same handler for each of these steps; they must not drift.
 
     Setup and reconfiguration reach the same hardware, so a check added to one
     and forgotten in the other would only be found by the user it fails on.
+    The steps now live once, in ``drivers/huawei_flow.py``, and each flow's
+    generated method points at that handler.
     """
-    import inspect
-
     from custom_components.omnibattery.config_flow import (
         MarstekVenusConfigFlow,
         OptionsFlowHandler,
     )
+    from custom_components.omnibattery.drivers.huawei_flow import HUAWEI_SETUP
 
-    for name in (
-        "async_step_battery_connection_huawei",
-        "async_step_battery_connection_huawei_slave",
-        "_huawei_store",
-        "_huawei_search",
+    for step_id in (
+        "battery_connection_huawei",
+        "battery_connection_huawei_slave",
     ):
-        setup = inspect.getsource(getattr(MarstekVenusConfigFlow, name))
-        options = inspect.getsource(getattr(OptionsFlowHandler, name))
-        assert setup == options, name
+        name = f"async_step_{step_id}"
+        setup = getattr(MarstekVenusConfigFlow, name).__wrapped__.__defaults__[1]
+        options = getattr(OptionsFlowHandler, name).__wrapped__.__defaults__[1]
+        assert setup is options is HUAWEI_SETUP.steps[step_id], name
 
 
 @pytest.mark.asyncio
@@ -1778,15 +1784,14 @@ def _serialise(schema):
 
 
 def test_every_huawei_form_can_be_sent_to_the_frontend():
-    from custom_components.omnibattery.config_flow import (
-        MarstekVenusConfigFlow,
-        OptionsFlowHandler,
+    from custom_components.omnibattery.drivers.huawei_flow import (
+        _huawei_schema,
+        _huawei_slave_schema,
     )
 
-    for flow in (MarstekVenusConfigFlow, OptionsFlowHandler):
-        assert _serialise(flow._huawei_schema({}, 1))
-        assert _serialise(flow._huawei_schema({"slave_id": 4, "host": "1.2.3.4"}, 2))
-        assert _serialise(flow._huawei_slave_schema([(4, "SUN2000-8K-MAP0", True)]))
+    assert _serialise(_huawei_schema({}, 1))
+    assert _serialise(_huawei_schema({"slave_id": 4, "host": "1.2.3.4"}, 2))
+    assert _serialise(_huawei_slave_schema([(4, "SUN2000-8K-MAP0", True)]))
 
 
 @pytest.mark.asyncio
@@ -1813,7 +1818,7 @@ async def test_the_rendered_connection_form_survives_serialisation(monkeypatch):
 # locked the user out of a figure the installation can genuinely reach.
 # ----------------------------------------------------------------------
 def test_the_form_allows_more_than_the_battery_reports_today():
-    from custom_components.omnibattery.config_flow import _huawei_power_ceilings
+    from custom_components.omnibattery.drivers.huawei_flow import _huawei_power_ceilings
 
     probed = {
         "device_max_charge_power": 7000,
@@ -1825,7 +1830,7 @@ def test_the_form_allows_more_than_the_battery_reports_today():
 
 
 def test_without_an_inverter_rating_the_battery_figure_stands_in():
-    from custom_components.omnibattery.config_flow import _huawei_power_ceilings
+    from custom_components.omnibattery.drivers.huawei_flow import _huawei_power_ceilings
 
     assert _huawei_power_ceilings({
         "device_max_charge_power": 7000, "device_max_discharge_power": 5000,
@@ -1835,7 +1840,7 @@ def test_without_an_inverter_rating_the_battery_figure_stands_in():
 
 
 def test_a_malformed_reading_cannot_open_the_form_to_anything():
-    from custom_components.omnibattery.config_flow import _huawei_power_ceilings
+    from custom_components.omnibattery.drivers.huawei_flow import _huawei_power_ceilings
 
     assert _huawei_power_ceilings({"device_inverter_max_power": 900000}) == (15000, 15000)
 
@@ -2351,16 +2356,14 @@ async def test_the_service_path_still_releases_through_the_service():
     ],
 )
 def test_both_shapes_of_backup_state_are_understood(value, armed):
-    from custom_components.omnibattery import _backup_switch_enabled
-
-    assert _backup_switch_enabled(value) is armed
+    # The core only asks whether it is armed: "cannot tell" (None) is not armed.
+    assert bool(_driver().backup_enabled({"backup_function": value})) is armed
 
 
 def test_the_driver_only_ever_reports_states_the_guard_knows():
     """A fourth spelling would silently disable the guard again."""
     import inspect
 
-    from custom_components.omnibattery import _backup_switch_enabled
     from custom_components.omnibattery.drivers import huawei
 
     source = inspect.getsource(huawei.HuaweiSolarDriver.read_telemetry)
@@ -2371,8 +2374,10 @@ def test_the_driver_only_ever_reports_states_the_guard_knows():
     }
     assert published == {"Off-grid", "Ready", "Disabled"}
     # Every one of them decides the guard one way or the other, none by accident.
-    assert _backup_switch_enabled("Off-grid") and _backup_switch_enabled("Ready")
-    assert not _backup_switch_enabled("Disabled")
+    driver = _driver()
+    assert driver.backup_enabled({"backup_function": "Off-grid"})
+    assert driver.backup_enabled({"backup_function": "Ready"})
+    assert not driver.backup_enabled({"backup_function": "Disabled"})
 
 
 # ----------------------------------------------------------------------
@@ -2390,11 +2395,14 @@ def test_the_options_limits_use_the_probed_hardware_not_a_marstek_default():
         MarstekVenusConfigFlow,
         OptionsFlowHandler,
     )
+    from custom_components.omnibattery.drivers.huawei_flow import HUAWEI_SETUP
 
+    # Both flows ask the brand's hook; Huawei's hook is its own, in its flow module.
     for flow in (MarstekVenusConfigFlow, OptionsFlowHandler):
         source = inspect.getsource(flow.async_step_battery_limits)
-        assert '_huawei_power_ceilings' in source, flow.__name__
-        assert 'brand == "huawei"' in source, flow.__name__
+        assert 'limits.power_ceilings(' in source, flow.__name__
+    source = inspect.getsource(type(HUAWEI_SETUP).power_ceilings)
+    assert '_huawei_power_ceilings' in source
 
 
 def test_reconfiguring_a_huawei_battery_offers_the_huawei_form():
@@ -2405,8 +2413,9 @@ def test_reconfiguring_a_huawei_battery_offers_the_huawei_form():
     from custom_components.omnibattery.config_flow import MarstekVenusConfigFlow
 
     routing = inspect.getsource(MarstekVenusConfigFlow.async_step_reconfigure_battery)
-    assert 'brand", "marstek") == "huawei"' in routing
-    assert "async_step_reconfigure_battery_huawei" in routing
+    # The routing is the brand's own setup: its reconfigure entry step.
+    assert "setup.reconfigure_entry_step" in routing
+    assert HuaweiSolarDriver.SETUP.reconfigure_entry_step == "reconfigure_battery_huawei"
     assert hasattr(MarstekVenusConfigFlow, "async_step_reconfigure_battery_huawei")
 
 
@@ -2421,6 +2430,7 @@ async def test_the_reconfigure_form_carries_the_battery_over(monkeypatch):
         "brand": "huawei", "huawei_direct_write": True,
     }
     flow = mod.MarstekVenusConfigFlow()
+    flow.context = {"source": "reconfigure"}
     flow.battery_index = 0
     flow.hass = SimpleNamespace(
         config_entries=SimpleNamespace(async_entries=lambda _domain: [object()])
@@ -2467,6 +2477,7 @@ def _reconfigure_flow(monkeypatch, *, probe, battery=None, devices=None,
         "brand": "huawei", "huawei_direct_write": True,
     }
     flow = mod.MarstekVenusConfigFlow()
+    flow.context = {"source": "reconfigure"}
     flow.battery_index = 0
     flow._reconfigure_batteries = []
     flow.hass = SimpleNamespace(
@@ -2474,9 +2485,9 @@ def _reconfigure_flow(monkeypatch, *, probe, battery=None, devices=None,
     )
     entry = SimpleNamespace(data={"batteries": [current]})
     monkeypatch.setattr(mod.MarstekVenusConfigFlow, "_get_reconfigure_entry", lambda self: entry)
-    monkeypatch.setattr(mod.HuaweiSolarDriver, "probe", AsyncMock(return_value=probe))
-    monkeypatch.setattr(mod.HuaweiSolarDriver, "find_emma_slave_id", AsyncMock(return_value=emma))
-    monkeypatch.setattr(mod.HuaweiSolarDriver, "scan_slave_ids", AsyncMock(return_value=scan or []))
+    monkeypatch.setattr(HuaweiSolarDriver, "probe", AsyncMock(return_value=probe))
+    monkeypatch.setattr(HuaweiSolarDriver, "find_emma_slave_id", AsyncMock(return_value=emma))
+    monkeypatch.setattr(HuaweiSolarDriver, "scan_slave_ids", AsyncMock(return_value=scan or []))
     registry = MagicMock()
     registry.async_get.side_effect = (devices or {}).get
     monkeypatch.setattr(mod.dr, "async_get", lambda hass: registry)
@@ -2632,7 +2643,7 @@ def test_the_proxy_hint_still_reaches_the_user():
     """Removing the URL from the string must not remove it from the screen."""
     import json
 
-    from custom_components.omnibattery.config_flow import _MODBUS_PROXY_URL
+    from custom_components.omnibattery.drivers.huawei_flow import _MODBUS_PROXY_URL
 
     strings = json.load(open("custom_components/omnibattery/strings.json", encoding="utf-8"))
     for section in ("config", "options"):

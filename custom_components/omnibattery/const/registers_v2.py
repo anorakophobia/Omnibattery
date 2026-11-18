@@ -1,6 +1,5 @@
 """Modbus register and entity definitions for Marstek Venus v2 (unsuffixed) hardware."""
 
-from .registers_common import FAULT_BIT_DESCRIPTIONS, ALARM_BIT_DESCRIPTIONS
 
 SENSOR_DEFINITIONS = [
 
@@ -169,34 +168,6 @@ SENSOR_DEFINITIONS = [
         "data_type": "int16",
         "precision": 3,
         "scan_interval": "high"
-    },
-    {
-        # Fault status bits indicating various device faults
-        "name": "Fault Status",
-        "register": 36100,
-        "data_type": "uint32",
-        "key": "fault_status",
-        "device_class": "problem",
-        "icon": "mdi:alert",
-        "category": "diagnostic",
-        "enabled_by_default": True,
-        "scan_interval": "medium",
-        "bit_descriptions": FAULT_BIT_DESCRIPTIONS
-    },
-    {
-        # Alarm status bits indicating various device alarms
-        "name": "Alarm Status",
-        "register": 36000,
-        "data_type": "uint32",
-        "key": "alarm_status",
-        "device_class": "problem",
-        "icon": "mdi:alert",
-        "enabled_by_default": True,
-        "category": "diagnostic",
-        "unit": None,
-        "precision": 0,
-        "scan_interval": "medium",
-        "bit_descriptions": ALARM_BIT_DESCRIPTIONS
     },
     {
         # AC Offgrid Power in watts
@@ -551,31 +522,3 @@ REGISTER_BLOCKS_V2 = [
     },
 ]
 
-# Definitions for efficiency sensors
-EFFICIENCY_SENSOR_DEFINITIONS = [
-    {
-        "name": "Round-Trip Efficiency Total",
-        "key": "round_trip_efficiency_total",
-        "unit": "%",
-        "state_class": "measurement",
-        "dependency_keys": {
-            "charge": "total_charging_energy",
-            "discharge": "total_discharging_energy"
-        },
-    }
-]
-
-# Definitions for stored energy sensors
-STORED_ENERGY_SENSOR_DEFINITIONS = [
-    {
-        "name": "Stored Energy",
-        "key": "stored_energy",
-        "unit": "kWh",
-        "device_class": "energy",
-        "state_class": "total",
-        "dependency_keys": {
-            "soc": "battery_soc",
-            "capacity": "battery_total_energy"
-        },
-    }
-]

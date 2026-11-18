@@ -20,6 +20,7 @@ from custom_components.omnibattery.const import PREDICTIVE_MODE_DYNAMIC_PRICING
 from custom_components.omnibattery.tracking.non_responsive_tracker import (
     NonResponsiveTracker,
 )
+from tests.conftest import _FakeMarstekDriver
 
 _TRACKER = "custom_components.omnibattery.tracking.non_responsive_tracker"
 
@@ -54,6 +55,7 @@ def _main_controller(state_holder, pd_calls):
 
     coordinator = _Coordinator(
         _is_shutting_down=False,
+        driver=_FakeMarstekDriver(),
         is_available=True,
         data={"battery_soc": 50},
         max_soc=90,
@@ -367,6 +369,7 @@ def test_manual_grid_charge_does_not_induce_automatic_discharge_when_idle():
 
     manual = _HashableNamespace(
         _is_shutting_down=False,
+        driver=_FakeMarstekDriver(),
         battery_manual_mode_enabled=True,
         data={"battery_power": 700},
         name="manual battery",
@@ -402,6 +405,7 @@ def test_manual_grid_charge_reduces_automatic_charge_without_discharge():
     controller._compute_pd_new_power = _reduce_automatic_charge
     manual = _HashableNamespace(
         _is_shutting_down=False,
+        driver=_FakeMarstekDriver(),
         battery_manual_mode_enabled=True,
         data={"battery_power": 1000},
         name="manual battery",
@@ -526,7 +530,10 @@ def _predictive_controller(state_holder, writes):
     class _Coordinator(SimpleNamespace):
         __hash__ = object.__hash__
 
-    coordinator = _Coordinator(name="battery", data={"battery_soc": 50}, max_soc=90)
+    coordinator = _Coordinator(
+        name="battery", driver=_FakeMarstekDriver(),
+        data={"battery_soc": 50}, max_soc=90,
+    )
 
     class _States:
         def get(self, _entity_id):
@@ -560,7 +567,6 @@ def _predictive_controller(state_holder, writes):
         first_execution=False,
         _predictive_charge_target_soc={coordinator: 80.0},
         capacity_protection_enabled=False,
-        capacity_protection_limit=0.0,
         _get_available_batteries=lambda is_charging, **_kwargs: [coordinator],
         _filter_grid_sample=lambda raw, _elapsed: raw,
         _effective_system_capacity=lambda _batteries, is_charging: 2500.0,
@@ -702,6 +708,7 @@ def test_predictive_zero_cross_is_clamped_to_positive_effective_charge():
     controller = _predictive_controller(state_holder, writes)
     controller.previous_power = -50.0
     controller.previous_error = 0.0
+    controller.deadband = 250.0  # grid stays inside ceiling+trigger (#683 release)
 
     asyncio.run(controller._handle_predictive_grid_charging())
 
@@ -721,6 +728,7 @@ def test_predictive_zero_cross_respects_rate_limit_before_charge_floor():
     controller = _predictive_controller(state_holder, writes)
     controller.previous_power = -500.0
     controller.previous_error = 0.0
+    controller.deadband = 5000.0  # keep the floor engaged (#683 release not in play)
 
     asyncio.run(controller._handle_predictive_grid_charging())
 
@@ -746,7 +754,8 @@ def test_predictive_demand_spike_keeps_predictive_slot_while_settling():
     assert controller.first_execution is False
     assert controller.previous_power == 0
     assert len(writes) == 3
-    assert all(charge > 0 and discharge == 0 for _, charge, discharge in writes[:2])
+    # Above the ceiling the command walks down to idle (#683) but never discharges.
+    assert all(discharge == 0 for _, _, discharge in writes[:2])
     assert [(charge, discharge) for _, charge, discharge in writes][-1] == (0, 0)
 
     # The predictive owner itself remains idle while telemetry settles; normal
@@ -787,28 +796,27 @@ def test_predictive_peak_shaving_waits_for_two_fresh_samples_before_discharge():
     state_holder = {"state": _state(3000, first_report)}
     writes = []
     controller = _predictive_controller(state_holder, writes)
-    controller.max_contracted_power = 4000.0
+    controller.max_contracted_power = 2900.0
     controller.capacity_protection_enabled = True
-    controller.capacity_protection_limit = 2000.0
     controller._capacity_protection_status = {}
     controller._capacity_protection_active = False
 
     _confirm_predictive_hard_limit(controller, state_holder, first_report)
-    assert len(writes) == 3
+    assert len(writes) == 2  # peak case confirms on 2 fresh samples (#683)
     assert [(charge, discharge) for _, charge, discharge in writes][-1] == (0, 0)
     _complete_predictive_latency_wait(controller)
 
     # First post-idle publication still may include inverter ramp/old charge.
     state_holder["state"] = _state(3000, first_report + timedelta(seconds=12))
     asyncio.run(controller._handle_predictive_grid_charging())
-    assert len(writes) == 3
+    assert len(writes) == 2
 
     # A second independent sample confirms a real 1 kW excess, which is the
     # only amount Peak Shaving is allowed to discharge.
     state_holder["state"] = _state(3000, first_report + timedelta(seconds=16))
     asyncio.run(controller._handle_predictive_grid_charging())
-    assert [(charge, discharge) for _, charge, discharge in writes][-1] == (0, 1000)
-    assert controller._predictive_demand_state == "peak_shaving"
+    assert [(charge, discharge) for _, charge, discharge in writes][-1] == (0, 100)
+    assert controller._predictive_demand_state == "emergency_discharge"
 
 
 def test_predictive_charge_blocker_keeps_peak_protection_ownership():
@@ -816,9 +824,8 @@ def test_predictive_charge_blocker_keeps_peak_protection_ownership():
     state_holder = {"state": _state(3000, first_report)}
     writes = []
     controller = _predictive_controller(state_holder, writes)
-    controller.max_contracted_power = 4000.0
+    controller.max_contracted_power = 2900.0
     controller.capacity_protection_enabled = True
-    controller.capacity_protection_limit = 2000.0
     controller._capacity_protection_status = {}
     controller._capacity_protection_active = False
 
@@ -830,8 +837,8 @@ def test_predictive_charge_blocker_keeps_peak_protection_ownership():
         asyncio.run(controller._handle_predictive_grid_charging())
 
     assert controller.grid_charging_active is True
-    assert controller._predictive_demand_state == "peak_shaving"
-    assert [(charge, discharge) for _, charge, discharge in writes][-1] == (0, 1000)
+    assert controller._predictive_demand_state == "emergency_discharge"
+    assert [(charge, discharge) for _, charge, discharge in writes][-1] == (0, 100)
 
 
 def test_predictive_protection_clears_status_while_settling_after_peak():
@@ -839,9 +846,8 @@ def test_predictive_protection_clears_status_while_settling_after_peak():
     state_holder = {"state": _state(3000, first_report)}
     writes = []
     controller = _predictive_controller(state_holder, writes)
-    controller.max_contracted_power = 4000.0
+    controller.max_contracted_power = 2900.0
     controller.capacity_protection_enabled = True
-    controller.capacity_protection_limit = 2000.0
     controller._capacity_protection_status = {}
     controller._capacity_protection_active = False
 
@@ -865,7 +871,6 @@ def test_predictive_emergency_uses_physical_load_when_excluded_load_is_ignored()
     controller = _predictive_controller(state_holder, writes)
     controller.max_contracted_power = 2000.0
     controller.capacity_protection_enabled = False
-    controller.capacity_protection_limit = 0.0
     controller.capacity_protection_excluded_devices = False
     controller._excluded_included_adjustment = 2500.0
     controller._capacity_protection_status = {}
@@ -886,9 +891,8 @@ def test_predictive_settling_counts_samples_only_after_measured_idle():
     state_holder = {"state": _state(3000, first_report)}
     writes = []
     controller = _predictive_controller(state_holder, writes)
-    controller.max_contracted_power = 4000.0
+    controller.max_contracted_power = 2300.0
     controller.capacity_protection_enabled = True
-    controller.capacity_protection_limit = 2000.0
     controller._capacity_protection_status = {}
     controller._capacity_protection_active = False
     measured = {"power": 500.0}
@@ -907,11 +911,11 @@ def test_predictive_settling_counts_samples_only_after_measured_idle():
     state_holder["state"] = _state(3000, first_report + timedelta(seconds=16))
     asyncio.run(controller._handle_predictive_grid_charging())
     assert controller._predictive_demand_fresh_samples == 1
-    assert len(writes) == 3
+    assert len(writes) == 2  # peak case confirms on 2 fresh samples (#683)
 
     state_holder["state"] = _state(3000, first_report + timedelta(seconds=20))
     asyncio.run(controller._handle_predictive_grid_charging())
-    assert [(charge, discharge) for _, charge, discharge in writes][-1] == (0, 1000)
+    assert [(charge, discharge) for _, charge, discharge in writes][-1] == (0, 700)
 
 
 def test_predictive_peak_does_not_recalculate_from_watchdog_sample():
@@ -919,9 +923,8 @@ def test_predictive_peak_does_not_recalculate_from_watchdog_sample():
     state_holder = {"state": _state(3000, first_report)}
     writes = []
     controller = _predictive_controller(state_holder, writes)
-    controller.max_contracted_power = 4000.0
+    controller.max_contracted_power = 2900.0
     controller.capacity_protection_enabled = True
-    controller.capacity_protection_limit = 2000.0
     controller._capacity_protection_status = {}
     controller._capacity_protection_active = False
 
@@ -938,7 +941,7 @@ def test_predictive_peak_does_not_recalculate_from_watchdog_sample():
     asyncio.run(controller._handle_predictive_grid_charging())
 
     assert len(writes) == write_count
-    assert controller._predictive_protection_command_w == 1000.0
+    assert controller._predictive_protection_command_w == 100.0
 
 
 def test_predictive_peak_stops_discharge_when_meter_is_too_stale():
@@ -946,9 +949,8 @@ def test_predictive_peak_stops_discharge_when_meter_is_too_stale():
     state_holder = {"state": _state(3000, first_report)}
     writes = []
     controller = _predictive_controller(state_holder, writes)
-    controller.max_contracted_power = 4000.0
+    controller.max_contracted_power = 2900.0
     controller.capacity_protection_enabled = True
-    controller.capacity_protection_limit = 2000.0
     controller._capacity_protection_status = {}
     controller._capacity_protection_active = False
 
@@ -975,7 +977,10 @@ def test_predictive_target_battery_absorbs_measured_export_only():
     controller = _predictive_controller(state_holder, writes)
     predictive = controller.coordinators[0]
     # Past its predictive target, still below its normal max SOC.
-    surplus = type(predictive)(name="surplus", data={"battery_soc": 38}, max_soc=100)
+    surplus = type(predictive)(
+        name="surplus", driver=_FakeMarstekDriver(),
+        data={"battery_soc": 38}, max_soc=100,
+    )
     controller.coordinators = [predictive, surplus]
     controller._get_available_batteries = (
         lambda is_charging, ignore_predictive_target=False, **_kwargs: (

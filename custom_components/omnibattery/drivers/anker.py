@@ -23,16 +23,20 @@ import logging
 from dataclasses import replace
 from typing import Optional
 
-from ..infra.anker_modbus_client import AnkerModbusClient
-from ..infra.modbus_client import decode_registers
+from .anker_client import AnkerModbusClient
+from ..infra.modbus_helpers import decode_registers
 from .base import (
     BatteryDriver,
     DriverCapabilities,
+    DriverContext,
+    DriverReconciliation,
+    DriverTraits,
     DELIVERED_AC_POWER_KEY,
     ReadGroup,
     SetpointResult,
     TelemetrySnapshot,
 )
+from .anker_flow import ANKER_SETUP
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,9 +56,11 @@ _DEVICE_MODEL_REG_COUNT = 5
 _ADDR_DEVICE_SN = 10100
 _DEVICE_SN_REG_COUNT = 12
 
-# Family continuous envelope (Max AC). Live caps come from 10036/10038; this is
-# only an upper clamp so peak/aggregate readings cannot inflate PD limits.
-_HW_MAX_POWER_W = 3500
+# Hardware ceiling: two combined Max AC units report 7000 W in 10036/10038 (#646).
+# Live caps come from those registers; this is only an upper clamp. The EFFECTIVE
+# limit is min(register, user-configured max), and the configured value defaults
+# to 3500 W (anker_flow), so a lone unit's 7000 W peak reading never raises it.
+_HW_MAX_POWER_W = 7000
 # A setpoint at least this large counts as "latched" for the 0 W glitch filter.
 # Not a hardware floor: 10071 accepts any value from 0 W (#734).
 _GLITCH_LATCH_MIN_W = 100
@@ -301,6 +307,25 @@ def _label_for_product_code(code: Optional[str]) -> str:
 class AnkerModbusDriver(BatteryDriver):
     """Modbus TCP driver for Anker SOLIX Solarbank Max AC / 4 E5000 Pro / XE AC."""
 
+    BRAND = "anker"
+    SETUP = ANKER_SETUP
+    TRAITS = DriverTraits(
+        supports_voltage_taper=False, ip_addressed=True, min_soc_range=(0, 20, 10)
+    )
+    LABEL = "Anker SOLIX Solarbank Max AC / 4 E5000 Pro"
+    MANUFACTURER = "Anker"
+    DEFAULT_MODEL = "Solarbank Max AC"
+
+    @classmethod
+    def from_config(cls, battery_config, context: DriverContext) -> "AnkerModbusDriver":
+        return cls(
+            battery_config["host"],
+            battery_config["port"],
+            battery_config.get("slave_id", 1),
+            max_charge_power_w=context.max_charge_power_w,
+            max_discharge_power_w=context.max_discharge_power_w,
+        )
+
     def __init__(
         self,
         host: str,
@@ -341,6 +366,7 @@ class AnkerModbusDriver(BatteryDriver):
             setpoint_confirm_reliable=False,
             delivered_power_reliable=False,
             actuator_latency_s=1.0,
+            lifetime_counters_ac=False,  # 10262/10264 count DC to DC (#706)
         )
 
     @property
@@ -353,6 +379,21 @@ class AnkerModbusDriver(BatteryDriver):
         """Whether the connected unit is a Solarbank XE AC SKU."""
         return self._product_code in _XE_AC_PRODUCT_CODES
 
+    def reconcile(
+        self, data, *, reason, state=None
+    ) -> DriverReconciliation | None:
+        """Drop PV fields a model without independent PV must not keep.
+
+        A reconnect can refine the identity after an earlier poll, and the
+        coordinator merges snapshots instead of expiring keys, so a stale
+        compatible-model reading could otherwise reach totals or the dashboard.
+        """
+        if reason not in ("connect", "read_group") or self.has_independent_pv:
+            return None
+        return DriverReconciliation(
+            drop_keys=("solar_power", "pv_power", "third_party_pv_power")
+        )
+
     @property
     def has_independent_pv(self) -> bool:
         """Whether this SKU's aggregate registers are an independent PV source.
@@ -364,6 +405,17 @@ class AnkerModbusDriver(BatteryDriver):
         external-sensor-only path until a new product is explicitly classified.
         """
         return self._product_code in _INDEPENDENT_PV_PRODUCT_CODES
+
+    @property
+    def allows_aggregate_solar(self) -> bool:
+        """Only independent-PV SKUs publish a real aggregate PV value."""
+        return self.has_independent_pv
+
+    OBSOLETE_ENTITY_LEGACY_PREFIXES = True
+
+    def obsolete_entity_suffixes(self) -> tuple[str, ...]:
+        """Models without an independent PV source never own ``solar_power``."""
+        return () if self.has_independent_pv else ("solar_power",)
 
     def _field_specs_for_model(self) -> list[dict]:
         """Return the register fields that are meaningful for this model."""
@@ -571,9 +623,8 @@ class AnkerModbusDriver(BatteryDriver):
                     if product_code:
                         self._set_product_code(product_code)
                 if field["key"] == "max_charge_power" and isinstance(value, (int, float)):
-                    # Cap at the static family envelope so peak/aggregate readings
-                    # (e.g. 7000 W) do not inflate the PD clamp beyond continuous
-                    # rating; live 10036/10038 still set the effective device cap.
+                    # Cap at the hardware ceiling; the user-configured max (default
+                    # 3500 W) still bounds the effective limit upstream.
                     capped = max(0, min(_HW_MAX_POWER_W, int(value)))
                     snapshot[field["key"]] = capped or _HW_MAX_POWER_W
                     self._dynamic_max_charge_w = snapshot[field["key"]]
@@ -764,6 +815,11 @@ class AnkerModbusDriver(BatteryDriver):
             return False
         self._client.unit_id = self._slave_id
         return await self._client.async_write_register(address, int(value))
+
+    def ac_register_power_w(self, data: dict):
+        # ``ac_power`` is +discharge / -charge; the query speaks +charge.
+        value = data.get("ac_power")
+        return None if value is None else -float(value)
 
     def net_power_from_data(self, data: dict) -> Optional[int]:
         try:

@@ -29,6 +29,7 @@ guard, an expired slot: all of them fall through to
 """
 from __future__ import annotations
 
+import dataclasses
 import logging
 import math
 from datetime import datetime, timedelta
@@ -37,11 +38,13 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.util import dt as dt_util
 
+from ..infra.clock import local_now
 from ..energy import effective_round_trip_efficiency
 from ..const import PREDICTIVE_MODE_DYNAMIC_PRICING
 from ..pricing import PriceSlot
 from ..pricing.curtailment import distribute_solar_forecast
 from ..pricing.discharge_reserve import consumption_by_slot
+from ..pricing.plan_inputs import energy_over
 from ..pricing.high_price_discharge import (
     STATUS_FAIL_SAFE,
     STATUS_PLANNED,
@@ -52,6 +55,7 @@ from ..pricing.high_price_discharge import (
 from ..solar_forecast import (
     async_fetch_energy_solar_forecast,
     get_configured_solar_forecast_sensor,
+    wh_period_ends,
 )
 
 if TYPE_CHECKING:
@@ -100,9 +104,9 @@ SOLAR_REFRESH_INTERVAL_S = 1800.0
 def solar_wh_by_slot(slots: list, wh_hours: dict, horizon_end: datetime) -> dict:
     """Spread provider periods over the part of each slot after ``horizon_end``.
 
-    Keys are period starts; providers omit zero periods (Solcast), so the
-    period length is the smallest gap between keys and a missing key inside
-    the covered span is zero. Past the last period is unknown, never zero.
+    Keys are period starts (lengths per :func:`wh_period_ends`); providers
+    omit zero periods (Solcast), so a missing key inside the covered span is
+    zero. Past the last period is unknown, never zero.
     """
     entries = []
     for timestamp, wh in wh_hours.items():
@@ -116,20 +120,20 @@ def solar_wh_by_slot(slots: list, wh_hours: dict, horizon_end: datetime) -> dict
     if not entries:
         return {}
     entries.sort()
-    period = min(
-        (b - a for (a, _), (b, _) in zip(entries, entries[1:]) if b > a),
-        default=timedelta(hours=1),
-    )
-    covered_end = entries[-1][0] + period
+    periods = [
+        (moment, end, wh)
+        for (moment, wh), end in zip(entries, wh_period_ends([m for m, _ in entries]))
+    ]
+    covered_end = periods[-1][1]
     result = {}
     for slot in slots:
         start = max(slot.start, horizon_end)
         if slot.end <= start or start >= covered_end:
             continue
         result[slot] = sum(
-            wh * max(0.0, (min(slot.end, moment + period) - max(start, moment))
-                     .total_seconds()) / period.total_seconds()
-            for moment, wh in entries
+            wh * max(0.0, (min(slot.end, end) - max(start, moment))
+                     .total_seconds()) / (end - moment).total_seconds()
+            for moment, end, wh in periods
         ) / 1000.0
     return result
 
@@ -200,6 +204,11 @@ class HighPriceDischargeManager:
             self._release(STATE_INVALID_CONFIGURATION, GUARD_NO_MAX_POWER)
             return
 
+        sales = getattr(self._controller, "_dp_plan_sales", None)
+        if sales is not None:
+            self._refresh_plan_sale(sales)
+            return
+
         self._maybe_rebuild(config)
 
         plan = self._plan
@@ -232,13 +241,52 @@ class HighPriceDischargeManager:
         )
         self._set_status(STATE_ACTIVE, REASON_PLANNED, power_w=-allocation.power_w)
 
+    def _refresh_plan_sale(self, sales: dict) -> None:
+        """Run the 2.0.0 optimizer's sale (step 7) through this override and
+        all its guards. It sells while the reading is at least the whole
+        percent of the lower end of the slot's projection: on the plan it runs
+        the whole slot (planned = executed, measured), behind the plan it sells
+        less, and it never goes more than one reading step past the plan. The
+        lower end because a sale at the floor exports the sun and one whose
+        extra sun charges the battery projects a rise: neither has energy to
+        stop at. No all-or-nothing "on the plan's track" check: a 5 kW quarter
+        is 12 points of a 10 kWh fleet and a 2-point margin skipped whole
+        planned quarters."""
+        controller = self._controller
+        now = self._now()
+        pricing = getattr(controller, "_pricing_mgr", None)
+        slot = next((s for s in sales if s.start <= now < s.end), None)
+        if slot is None or pricing is None:
+            self._release(STATE_WAITING, REASON_NO_ALLOCATION)
+            return
+        guard = self._block_guard()
+        if guard is not None:
+            self._release(STATE_BLOCKED, guard)
+            return
+        ends = (pricing.projected_soc_now(slot.start), pricing.projected_soc_now(slot.end))
+        stop_soc = None if None in ends else math.floor(min(ends) + 1e-9)
+        coords = [
+            c for c in controller.coordinators
+            if c.data and not getattr(c, "battery_manual_mode_enabled", False)
+        ]
+        current = (
+            sum(float(c.data.get("battery_soc", 0) or 0) for c in coords) / len(coords)
+            if coords else None
+        )
+        if stop_soc is None or current is None or current < stop_soc:
+            self._release(STATE_WAITING, REASON_NO_ALLOCATION)
+            return
+        power_w = float(sales[slot]) * 1000.0
+        controller.set_setpoint_override(OVERRIDE_SOURCE, -power_w, priority=OVERRIDE_PRIORITY)
+        self._set_status(STATE_ACTIVE, REASON_PLANNED, power_w=-power_w)
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
     def _now(self) -> datetime:
         """Local wall clock, naive like the rest of the pricing layer."""
-        return datetime.now()
+        return local_now()
 
     @staticmethod
     def _aware(moment: datetime) -> datetime:
@@ -445,6 +493,23 @@ class HighPriceDischargeManager:
                     solar_kwh=0.0,
                 )
             )
+        # The planner's own solar (excluded-device claim and safety margin
+        # included) replaces the curtailment model's over the priced slots.
+        energy_projection = getattr(pricing, "energy_projection", None)
+        projection = (
+            energy_projection(now, horizon_end) if callable(energy_projection) else None
+        )
+        if projection is not None:
+            for index, slot in enumerate(slots):
+                horizon[index] = dataclasses.replace(
+                    horizon[index],
+                    solar_kwh=energy_over(
+                        projection.boundaries,
+                        projection.solar_kwh,
+                        slot.start,
+                        slot.end,
+                    ),
+                )
         return horizon
 
     def _build_fill_slots(

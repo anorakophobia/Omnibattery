@@ -25,9 +25,19 @@ in incrementally; see ``docs/plans/driver_abstraction.md`` for the phase plan.
 
 from __future__ import annotations
 
+import enum
+import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Optional
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, Sequence
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
+    from .setup import DriverSetup
+
+_LOGGER = logging.getLogger(__name__)
 
 
 # Optional telemetry key a driver may publish alongside ``battery_power``.
@@ -41,6 +51,296 @@ from typing import Optional
 # ``battery_power``. Drivers that cannot measure it simply omit the key and the
 # control layer keeps judging delivery from the cells alone.
 DELIVERED_AC_POWER_KEY = "ac_delivered_power"
+
+# Cell-side (DC) battery power, same sign convention as ``battery_power``, for a
+# driver whose ``battery_power`` is really an AC-side figure (Hoymiles, #625) and
+# that can measure the DC side separately (voltage x current). The efficiency
+# sensor uses it as the DC plane when present.
+BATTERY_DC_POWER_KEY = "battery_dc_power"
+
+# --- canonical keys ----------------------------------------------------------
+# Logical keys the platforms treat specially. They are the vocabulary the first
+# drivers (Marstek registers) gave to the entities, and a driver that wants the
+# behaviour publishes its control or telemetry under the same key. The values
+# are entity ``unique_id`` suffixes and translation keys: they must not change.
+
+#: Switch that turns the device's external (RS485/Modbus) control mode on or off.
+#: Its on/off goes through ``set_rs485_control`` and a readback, not a plain write.
+KEY_RS485_CONTROL_MODE = "rs485_control_mode"
+#: Select with the options ``None`` / ``Charge`` / ``Discharge``. The chosen option
+#: is remembered as the manual force mode so the control loop can re-assert it.
+KEY_FORCE_MODE = "force_mode"
+#: Number of the manual charge setpoint in watts (the register-backed twin of the
+#: software manual setpoint). Its slider is capped to the configured charge limit.
+KEY_SET_CHARGE_POWER = "set_charge_power"
+#: Number of the manual discharge setpoint in watts; see ``KEY_SET_CHARGE_POWER``.
+KEY_SET_DISCHARGE_POWER = "set_discharge_power"
+#: Number holding the maximum charge power the device accepts, in watts. Where the
+#: device only has a hardware selector (``hardware_power_cap_choices``) the user's
+#: software limit is shown and written instead.
+KEY_MAX_CHARGE_POWER = "max_charge_power"
+#: Number holding the maximum discharge power; see ``KEY_MAX_CHARGE_POWER``. A
+#: device that publishes this limit under another key declares the alias with the
+#: ``canonical_key`` field of its number definition.
+KEY_MAX_DISCHARGE_POWER = "max_discharge_power"
+#: Number of the device's own charge cut-off SOC in percent; writing it moves the
+#: coordinator's maximum SOC.
+KEY_CHARGING_CUTOFF_CAPACITY = "charging_cutoff_capacity"
+#: Number of the device's own discharge cut-off SOC in percent; writing it moves
+#: the coordinator's minimum SOC.
+KEY_DISCHARGING_CUTOFF_CAPACITY = "discharging_cutoff_capacity"
+#: Sensor of the state of charge in percent. The platform attaches the model label
+#: and the aggregate-solar and DC-PV flags to it for the panel.
+KEY_BATTERY_SOC = "battery_soc"
+#: Sensor of the lifetime discharged energy in kWh; the platform corrects it with
+#: the backup-discharge energy the integration measured.
+KEY_TOTAL_DISCHARGING_ENERGY = "total_discharging_energy"
+
+#: Field of an entity definition that names the canonical key the entity stands
+#: for when its own ``key`` (which fixes the ``unique_id``) differs from it. Absent
+#: means the entity's key is already the canonical one.
+CANONICAL_KEY_FIELD = "canonical_key"
+
+
+def canonical_key(definition: Mapping) -> str:
+    """The canonical key an entity definition stands for (its own key by default)."""
+    return definition.get(CANONICAL_KEY_FIELD, definition["key"])
+
+
+# Telemetry keys that directly govern control safety, in the canonical
+# vocabulary every driver imitates. During non-responsive recovery a successful
+# read of unrelated groups must not hide a frozen group that carries one of these
+# (issue #26): the coordinator counts the failures of those groups apart. A key a
+# driver does not publish simply never matches, so the default is the same set for
+# every driver; ``BatteryDriver.critical_control_keys`` is where a driver narrows
+# or widens it.
+CRITICAL_CONTROL_KEYS = frozenset({
+    "ac_power",
+    "battery_power",
+    "battery_soc",
+    KEY_FORCE_MODE,
+    "inverter_state",
+    KEY_SET_CHARGE_POWER,
+    KEY_SET_DISCHARGE_POWER,
+})
+
+
+class AcSource(enum.Enum):
+    """Where ``BatteryDriver.ac_contribution_w`` may read a battery's AC contribution.
+
+    REGISTER: the device's own AC-side reading, ``ac_register_power_w`` (only the
+    drivers that publish one override it). PORT: ``DELIVERED_AC_POWER_KEY``. CELL:
+    ``battery_power``, which on a battery with PV on its own DC bus is not what
+    crosses the AC port. A source that reads None is skipped.
+    """
+
+    REGISTER = "register"
+    PORT = "port"
+    CELL = "cell"
+
+
+# The five places that need the AC contribution disagree on which source comes
+# first and on which they accept (plan section 8, T7.4; pinned by
+# tests/test_ac_contribution_characterization.py). Each order below reproduces one
+# of them exactly. Diferencia conservada, decidir: the only reachable divergence
+# between drivers is Anker with independent PV, which publishes both a register
+# (the negated pack power) and the AC port (pack minus PV), and the two orders
+# read different ones.
+#: Controller (``_coordinator_delivered_power``) and phase limiter: register first.
+AC_REGISTER_FIRST = (AcSource.REGISTER, AcSource.PORT, AcSource.CELL)
+#: Consumption tracker: the AC port first.
+AC_PORT_FIRST = (AcSource.PORT, AcSource.REGISTER, AcSource.CELL)
+#: Residual-load reconstruction on a battery with connected MPPT PV: the cell power
+#: is refused there, so a battery with neither AC source reads as unreadable.
+AC_PORT_FIRST_NO_CELL = (AcSource.PORT, AcSource.REGISTER)
+#: Daily-operation diary: only the device's own AC-side reading, no fallback.
+AC_REGISTER_ONLY = (AcSource.REGISTER,)
+#: Phase limiter when it has no controller to ask: no AC port.
+AC_REGISTER_THEN_CELL = (AcSource.REGISTER, AcSource.CELL)
+
+
+class InverterStatus(enum.Enum):
+    """Canonical operating state of a battery's inverter.
+
+    The vocabulary behind the ``inverter_state`` telemetry key, in the numeric
+    codes the key carries. ``BatteryDriver.inverter_status`` turns whatever a
+    driver publishes into one of these (or ``None`` when it cannot say), and the
+    control layer compares members, never raw codes.
+    """
+
+    SLEEP = 0
+    STANDBY = 1
+    CHARGE = 2
+    DISCHARGE = 3
+    BACKUP = 4  # grid down: the backup port is fed from the cells
+    OTA_UPGRADE = 5
+    BYPASS = 6  # grid passed through to the backup port; the cells supply nothing
+
+
+@dataclass(frozen=True)
+class DriverAlarm:
+    """One active alarm or fault, already decoded by the driver.
+
+    ``kind`` is ``"fault"`` or ``"alarm"``; ``code`` identifies the condition
+    within its kind (stable across reads: the notifier tells new conditions from
+    standing ones by ``(kind, code)``). ``description`` is the human text, or
+    ``None`` for a condition the driver cannot name: it still counts as active
+    but adds no label.
+    """
+
+    kind: Literal["fault", "alarm"]
+    code: int
+    description: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class DriverContext:
+    """What the coordinator hands a driver's ``from_config`` besides the stored config.
+
+    The power limits arrive already normalised by the coordinator; ``persist`` and
+    ``stored`` are bound to this battery's entry in the config entry.
+    """
+
+    hass: "HomeAssistant"
+    name: str
+    device_key: str
+    max_charge_power_w: int
+    max_discharge_power_w: int
+    persist: Callable[[str, Any], None]
+    stored: Callable[[str], Any]
+
+
+def stored_battery_value(coordinator: Any, key: str) -> Any:
+    """Read one key of this coordinator's battery config (None when unknown)."""
+    entry = getattr(coordinator, "_config_entry", None)
+    data = getattr(entry, "data", None)
+    # Home Assistant hands out entry data as a read-only MappingProxyType, not a dict.
+    if not isinstance(data, Mapping):
+        return None
+    for battery in data.get("batteries", []):
+        if not isinstance(battery, Mapping):
+            continue
+        if (
+            battery.get("host") == coordinator.host
+            and battery.get("port") == coordinator.port
+            and battery.get("slave_id", 1) == getattr(coordinator, "slave_id", 1)
+        ):
+            return battery.get(key)
+    return None
+
+
+@dataclass(frozen=True)
+class CellVoltageProfile:
+    """Per-cell voltage levels the top-of-charge logic acts on (a cell chemistry).
+
+    The core compares the highest cell voltage a driver publishes
+    (``max_cell_voltage``) against these levels; a driver that publishes no cell
+    voltage declares no profile (``DriverCapabilities.cell_voltage_profile``
+    is None) and the core applies none.
+    """
+
+    # The charge taper starts at this voltage (cell >= taper_entry_v).
+    taper_entry_v: float
+    # The taper latch releases only below this voltage (hysteresis under entry).
+    taper_exit_v: float
+    # Top-cell point at which charging is paused / the BMS-owned hold begins.
+    pause_v: float
+    # After a first BMS cutoff above pause_v, the cell must relax to this voltage
+    # (cell <= recal_retry_v) before the one-shot retry is allowed.
+    recal_retry_v: float
+
+
+# LiFePO4 per-cell levels. They describe the chemistry, not a brand: any driver
+# whose cells are LFP and that publishes the highest cell voltage may declare it.
+LFP_CELL_VOLTAGE_PROFILE = CellVoltageProfile(
+    taper_entry_v=3.48,
+    taper_exit_v=3.44,
+    pause_v=3.60,
+    recal_retry_v=3.57,
+)
+
+
+@dataclass(frozen=True)
+class BalanceBaseline:
+    """How the balance monitor judges a cell-voltage spread, in millivolts.
+
+    Cells can leave the factory with a sizeable top-of-charge spread that is
+    normal, not a fault. The three thresholds are absolute raw-delta values placed
+    above it, so a fresh battery reads green; ``offset_mv`` is subtracted only
+    where a reading is judged against the stored history (the rising-trend gate
+    and the status of a stored reading).
+    """
+
+    # Factory top-of-charge spread, subtracted before judging stored readings.
+    offset_mv: float
+    # Raw (or, for stored readings, offset-corrected) spread at which the status
+    # turns yellow, orange and red.
+    yellow_mv: float
+    orange_mv: float
+    red_mv: float
+
+
+# The baseline of every driver today: the figures measured on Marstek cells
+# (commonly ~170-180 mV at 3.55 V, where the LiFePO4 curve is steep). A driver
+# whose cells ship with another spread declares its own; ``None`` = no baseline,
+# the monitor then records the reading without judging it.
+DEFAULT_BALANCE_BASELINE = BalanceBaseline(
+    offset_mv=180, yellow_mv=200, orange_mv=230, red_mv=250
+)
+
+
+@dataclass(frozen=True)
+class DriverTraits:
+    """Class-level traits the shared code needs before a driver is connected.
+
+    Unlike :class:`DriverCapabilities` (per instance, refined after ``connect``),
+    these are fixed per brand, or derived from the stored battery config by the
+    brand's own :meth:`BatteryDriver.traits_for`.
+    """
+
+    # The 100 % charge voltage taper switch exists (needs per-cell voltages).
+    supports_voltage_taper: bool = True
+    # The coordinator keeps the stored taper flag even without the switch.
+    # Freezes a known defect (plan section 8): Sessy's weekly-charge planning
+    # assumes a 200 W tail from a taper it does not have. Remove with that fix.
+    keeps_stored_taper_flag: bool = False
+    # Fixed power envelope: legacy configured limits are clamped to the device's.
+    fixed_power_envelope: bool = False
+    # The battery has a DC PV input that can be left unconnected (Marstek vA/vD).
+    optional_dc_pv_input: bool = False
+    # Initial SOC/power config is not written at setup: the device holds it.
+    device_owns_initial_config: bool = False
+    # Addressed by IP, so its address can drift.
+    ip_addressed: bool = False
+    # The BMS owns the top-of-charge cutoff (coupled-pack Marstek vA/vD): software
+    # must not treat a refused charge near 100 % as a fault. Marstek derives it
+    # from its stored version in its own ``traits_for``.
+    bms_owns_top_cutoff: bool = False
+    # The battery couples several packs and fills them in sequence (coupled-pack
+    # Marstek vA/vD), so its aggregate SOC and cell-voltage reading describe one
+    # pack and the control layer judges the top of charge on the per-pack SOC
+    # keys (``battery_soc_pack_*``). Derived like ``bms_owns_top_cutoff``.
+    sequential_pack_fill: bool = False
+    # A top-of-charge cutoff can be told from idle without ``inverter_state``
+    # (Zendure's local API does not publish it); the commanded setpoint and
+    # SOC >= 99 stand in for it.
+    cutoff_without_inverter_state: bool = False
+    # Decimals of the aggregate SOC; None keeps the sensor definition's own.
+    # Marstek derives it from its stored version in its own ``traits_for``.
+    soc_decimals: Optional[int] = None
+    # The device's max-power setting is only a hardware ceiling chosen from
+    # fixed options (Marstek v2/v3: 800 W or 2500 W), so the user's own limit
+    # must survive polling.
+    hardware_power_cap_choices: bool = False
+    # The config flow's battery-capacity field: Sessy cannot report one
+    # ("required"), Zendure and Hoymiles can ("optional"), the rest have none.
+    capacity_field: Literal["required", "optional", "none"] = "none"
+    # Offered range of the minimum-SOC control in the config flow: (low, high,
+    # default). Defaults are the Marstek v2 form's.
+    min_soc_range: tuple[int, int, int] = (12, 30, 12)
+    # Low bound of the maximum-SOC control (its high bound and default are 100).
+    # Marstek v3/vA/vD enforce SOC in software, so theirs is lower.
+    max_soc_low: int = 80
 
 
 @dataclass(frozen=True)
@@ -134,6 +434,11 @@ class DriverCapabilities:
     # so it keeps the cumulative charge/discharge counters. Defaults True.
     independent_power_planes: bool = True
 
+    # False if the lifetime charge/discharge counters are battery-side (DC to DC),
+    # so their ratio is the cell efficiency and not the AC round trip (Anker,
+    # #706). Such a ratio must not feed the arbitrage efficiency. Defaults True.
+    lifetime_counters_ac: bool = True
+
     # Approximate physical response time (seconds) after issuing a setpoint. The
     # zero-cross guard uses it to avoid commanding the opposite direction while
     # the previous command is still taking effect. Readback freshness is declared
@@ -179,6 +484,30 @@ class DriverCapabilities:
     # hardware backstop never moves (#495).
     charge_cutoff_range: tuple[float, float] = (50.0, 100.0)
     discharge_cutoff_range: tuple[float, float] = (12.0, 50.0)
+
+    # Per-cell voltage levels the top-of-charge logic applies to the driver's
+    # ``max_cell_voltage``. None = the driver publishes no cell voltage (or the
+    # levels do not fit its chemistry): the core applies none. Kept per instance
+    # in the capabilities, not in DriverTraits, because the Marstek driver derives
+    # it from the telemetry its model publishes, like ``has_mppt_pv``.
+    cell_voltage_profile: Optional[CellVoltageProfile] = None
+
+    # Telemetry keys of the per-MPPT-channel PV power (W) the driver publishes,
+    # in channel order. () = no channel keys. Separate from ``has_mppt_pv`` (the
+    # hardware flag the installation can switch off) and from the aggregate
+    # ``solar_power`` key: a model may publish channel keys without having
+    # ``has_mppt_pv``, and the core only ever sums the keys listed here.
+    mppt_power_keys: tuple[str, ...] = ()
+
+    # How the balance monitor judges the driver's cell-voltage spread. None = no
+    # baseline: the reading is recorded but not judged and raises no alert.
+    balance_baseline: Optional[BalanceBaseline] = DEFAULT_BALANCE_BASELINE
+
+
+def mppt_power_keys(coordinator) -> tuple[str, ...]:
+    """The MPPT channel keys this battery's driver publishes (``()`` if none)."""
+    capabilities = getattr(coordinator, "capabilities", None)
+    return tuple(getattr(capabilities, "mppt_power_keys", ()))
 
 
 def has_connected_mppt_pv(coordinator) -> bool:
@@ -278,6 +607,51 @@ class ReadGroup:
     keys: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class ReconcileState:
+    """What the coordinator owns and a driver's ``reconcile`` may need to read.
+
+    The driver never holds a reference to the coordinator; the coordinator hands
+    this snapshot in on every ``reconcile`` call. ``attributes`` holds the
+    current value of each coordinator attribute the driver mirrors (the names
+    in ``BatteryDriver.coordinator_attributes``; None when unset).
+    """
+
+    device_max_charge_power: int
+    device_max_discharge_power: int
+    configured_max_charge_power: int
+    configured_max_discharge_power: int
+    attributes: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class DriverReconciliation:
+    """What a driver asks the coordinator to apply after ``reconcile``.
+
+    ``None`` on every optional field means "leave it alone". The coordinator's
+    ``_apply_reconciliation`` applies it in this order: ``attributes``,
+    ``drop_keys``, ``definitions_changed``, the power limits, ``max_soc`` /
+    ``min_soc``, then ``persist`` in insertion order, then ``message``.
+    """
+
+    device_max_charge_power: Optional[int] = None
+    device_max_discharge_power: Optional[int] = None
+    configured_max_charge_power: Optional[int] = None
+    configured_max_discharge_power: Optional[int] = None
+    max_soc: Optional[int] = None
+    min_soc: Optional[int] = None
+    # Coordinator attributes to reassign (``ems_version``, ``zendure_model``...).
+    attributes: dict[str, Any] = field(default_factory=dict)
+    # Per-battery config keys to persist, in order.
+    persist: dict[str, Any] = field(default_factory=dict)
+    # Keys to remove from the coordinator's ``data``.
+    drop_keys: tuple[str, ...] = ()
+    # The coordinator rebuilds its key -> definition index from the driver.
+    definitions_changed: bool = False
+    # Pre-formatted info line the coordinator logs (prefixed with its name).
+    message: Optional[str] = None
+
+
 class BatteryDriver(ABC):
     """Abstract hardware driver for a single physical battery.
 
@@ -287,6 +661,83 @@ class BatteryDriver(ABC):
     """
 
     # --- identity -----------------------------------------------------------
+
+    # Class-level identity, read by ``drivers.registry`` and the device registry.
+    # A subclass sets all of them; the defaults only keep a bare driver usable.
+    BRAND: str = ""             # stable id stored as ``brand`` in the config entry
+    LABEL: str = ""             # label in the config flow's brand selector
+    MANUFACTURER: str = ""      # device registry manufacturer
+    DEFAULT_MODEL: str = ""     # device registry model when ``model_label`` is None
+    # Config keys of this brand to redact from diagnostics. The generic keys
+    # live here; ``registry.redact_keys()`` unions every registered class.
+    REDACT_KEYS: frozenset[str] = frozenset({"host", "serial", "ip_address", "mac"})
+
+    TRAITS: DriverTraits = DriverTraits()
+    # Config flow steps of this brand. ``None`` = no steps are generated for the
+    # brand; a ``DriverSetup`` gets its steps generated by ``config_flow.py``.
+    SETUP: "DriverSetup | None" = None
+
+    @classmethod
+    def traits_for(cls, battery_config: Mapping) -> DriverTraits:
+        """Traits of this brand for one stored battery config.
+
+        The brand's fixed ``TRAITS``; a brand whose traits follow its own stored
+        keys (Marstek's version and serial port) overrides this.
+        """
+        return cls.TRAITS
+
+    @classmethod
+    def model_version(cls, battery_config: Mapping, name: str | None = None) -> str | None:
+        """Hardware version a brand distinguishes in its stored config; None if none."""
+        return None
+
+    @classmethod
+    @abstractmethod
+    def from_config(
+        cls, battery_config: Mapping, context: DriverContext
+    ) -> "BatteryDriver":
+        """Build this brand's driver from one battery's stored config.
+
+        Reads exactly the config keys the brand owns, with their defaults;
+        ``context`` carries what the coordinator owns (see :class:`DriverContext`).
+        """
+
+    @classmethod
+    def link_key(cls, battery_config: Mapping) -> tuple:
+        """Identity of the physical link a battery sits on.
+
+        Batteries with the same key are set up one after another (they share one
+        connection slot); different keys connect concurrently. A brand with a
+        serial link of its own (Marstek) overrides this.
+        """
+        return (battery_config.get("host"), battery_config.get("port"), None)
+
+    @classmethod
+    def slot_power_ceiling(cls, battery_config: Mapping) -> Optional[int]:
+        """Hardware power ceiling of the time-slot forms; None = the configured max."""
+        return None
+
+    def coordinator_attributes(self) -> dict[str, Any]:
+        """Brand-owned config values the coordinator mirrors as public attributes."""
+        return {}
+
+    def reconcile(
+        self,
+        data: dict,
+        *,
+        reason: Literal["init", "connect", "read_group", "poll"],
+        state: Optional[ReconcileState] = None,
+    ) -> Optional[DriverReconciliation]:
+        """Align coordinator-owned state with what this brand has detected.
+
+        Called by the coordinator at four moments, named by ``reason``: ``init``
+        (end of the constructor's limit setup), ``connect`` (after a successful
+        connect or fresh reconnect), ``read_group`` (after each telemetry group
+        read) and ``poll`` (after each poll's data merge). ``data`` is the
+        coordinator's current telemetry; ``state`` the coordinator-owned values
+        in :class:`ReconcileState`. Returns what to apply, or None (default).
+        """
+        return None
 
     @property
     @abstractmethod
@@ -309,12 +760,35 @@ class BatteryDriver(ABC):
         return False
 
     @property
+    def allows_aggregate_solar(self) -> bool:
+        """Whether the panel may read this battery's aggregate ``solar_power``.
+
+        The panel fills a battery's PV from the single aggregate value only when
+        it is a genuine PV source. A driver whose aggregate value is derived
+        from the battery's own AC measurement returns False. Defaults to True.
+        """
+        return True
+
+    @property
     def model_label(self) -> Optional[str]:
         """Human-readable model for display (panel chip / device page).
 
         Defaults to None; concrete drivers override (Marstek: "Venus <version>";
         Zendure: the report's ``product`` field). Not abstract so a driver with no
         model identity need not implement it.
+        """
+        return None
+
+    @property
+    def configuration_url(self) -> Optional[str]:
+        """Web page of the device, shown as "Visit" on its device page."""
+        return None
+
+    def software_version(self, data: dict) -> Optional[str]:
+        """Firmware line for the device page, read from the coordinator's data.
+
+        None (the default) writes no firmware line. A method rather than a
+        property because the value lives in the polled telemetry, not the driver.
         """
         return None
 
@@ -495,6 +969,103 @@ class BatteryDriver(ABC):
         return False
 
     @abstractmethod
+    async def apply_config(
+        self,
+        *,
+        max_soc_pct: float,
+        min_soc_pct: float,
+        max_charge_power_w: int,
+        max_discharge_power_w: int,
+    ) -> bool:
+        """Write the one-time per-battery configuration (SOC window, power caps).
+
+        Called once from setup, under the coordinator lock. The driver decides
+        which of the values the hardware can hold; return True when nothing that
+        was attempted failed.
+        """
+
+    @abstractmethod
+    async def set_charge_cutoff(self, soc_pct: float) -> bool:
+        """Write the hardware charge ceiling (weekly full charge raises and restores it).
+
+        Return False when the hardware has no such setting or the write failed.
+        """
+
+    @abstractmethod
+    async def standby(self) -> bool:
+        """Idle the battery for teardown (integration unload); True on success."""
+
+    async def set_rs485_control(self, enable: bool) -> bool:
+        """Enable/disable external (RS485) control mode; False when there is none.
+
+        Defaults to False: only drivers whose ``capabilities.has_rs485_control``
+        is True have a mode to toggle.
+        """
+        return False
+
+    async def get_rs485_control(self) -> Optional[bool]:
+        """Read the RS485 control mode back; None when unknown or not applicable."""
+        return None
+
+    @property
+    def pack_field_specs(self) -> Sequence[dict]:
+        """Numeric per-pack sensor fields; the sensor platform builds one entity
+        per (pack, field). Empty for drivers that do not expose individual packs."""
+        return ()
+
+    def obsolete_entity_suffixes(self) -> Iterable[str]:
+        """Entity key suffixes that no longer belong to this battery.
+
+        Read by the sensor platform after the model is detected; it removes the
+        registry entries ``<prefix>_<suffix>`` of this battery. Empty by default.
+        The prefix is ``device_key``, plus the legacy ``host`` and ``name``
+        prefixes when ``OBSOLETE_ENTITY_LEGACY_PREFIXES`` is set.
+        """
+        return ()
+
+    # Entities of this brand were once keyed on host or name instead of
+    # device_key, so obsolete ones are looked up under those prefixes too.
+    OBSOLETE_ENTITY_LEGACY_PREFIXES: bool = False
+
+    # --- entity definitions (read by the coordinator and the platforms) ----
+
+    @property
+    def sensor_definitions(self) -> list[dict]:
+        """Sensor entity definitions. Empty unless the driver provides some."""
+        return []
+
+    @property
+    def number_definitions(self) -> list[dict]:
+        """Number entity definitions."""
+        return []
+
+    @property
+    def select_definitions(self) -> list[dict]:
+        """Select entity definitions."""
+        return []
+
+    @property
+    def switch_definitions(self) -> list[dict]:
+        """Switch entity definitions."""
+        return []
+
+    @property
+    def binary_sensor_definitions(self) -> list[dict]:
+        """Binary-sensor entity definitions."""
+        return []
+
+    @property
+    def button_definitions(self) -> list[dict]:
+        """Button entity definitions."""
+        return []
+
+    @property
+    def all_definitions(self) -> list[dict]:
+        """The polled union of the definitions above (the driver decides what
+        that includes; buttons are not polled)."""
+        return []
+
+    @abstractmethod
     def net_power_from_data(self, data: dict) -> Optional[int]:
         """Derive the current commanded net power from coordinator telemetry cache.
 
@@ -505,6 +1076,141 @@ class BatteryDriver(ABC):
         (Marstek: force_mode + set_charge/discharge_power; Zendure: ac_mode +
         input/output_limit).
         """
+
+    def inverter_status(self, data: dict) -> Optional[InverterStatus]:
+        """The inverter's operating state in the canonical vocabulary.
+
+        Reads ``inverter_state`` from the telemetry cache as the numeric codes of
+        ``InverterStatus``. Returns None when the driver publishes no state, a
+        state that is not a code (a text label) or a code outside the vocabulary:
+        None means "cannot tell", never "idle". A driver whose telemetry uses
+        another encoding overrides this.
+        """
+        raw = data.get("inverter_state")
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            return None
+        try:
+            return InverterStatus(raw)
+        except ValueError:
+            return None
+
+    def backup_enabled(self, data: dict) -> Optional[bool]:
+        """Whether the battery's backup output is armed.
+
+        Reads ``backup_function`` from the telemetry cache as Marstek's switch:
+        0 is armed, anything else is off. Returns None when the driver publishes
+        no value. A driver whose telemetry uses another encoding overrides this.
+        """
+        value = data.get("backup_function")
+        if value is None:
+            return None
+        return value == 0
+
+    def active_alarms(self, data: dict) -> list[DriverAlarm]:
+        """The alarms and faults currently active, decoded from ``data``.
+
+        Faults first, then alarms, each in ascending ``code`` order: the order the
+        system alarm sensor lists them and the notifier prints them. Defaults to
+        none; a driver whose telemetry carries alarm or fault status overrides it.
+        """
+        return []
+
+    def is_self_managed(self, data: dict) -> bool:
+        """Whether the device is running its own routine and ignores setpoints.
+
+        True while the device calibrates its SOC on its own: the core takes it
+        out of automatic control until it finishes. Defaults to False; a driver
+        whose telemetry reports such a state overrides this.
+        """
+        return False
+
+    @property
+    def manual_control_by_registers(self) -> bool:
+        """Whether manual mode drives the hardware through force-mode entities.
+
+        True when the driver publishes the ``force_mode`` select and the
+        ``set_charge_power`` / ``set_discharge_power`` numbers: manual charge and
+        discharge are then written straight to the device. False means the core
+        asserts the manual setpoint through ``apply_setpoint`` every cycle.
+        Defaults to ``capabilities.has_force_mode``; a driver that has the
+        capability but publishes no such entities overrides this.
+        """
+        return self.capabilities.has_force_mode
+
+    @property
+    def critical_control_keys(self) -> frozenset:
+        """Telemetry keys whose read groups count as safety-critical (issue #26).
+
+        Defaults to ``CRITICAL_CONTROL_KEYS``, the canonical vocabulary; keys the
+        driver does not publish never match.
+        """
+        return CRITICAL_CONTROL_KEYS
+
+    def forcible_power_from_data(self, data: dict) -> float:
+        """Signed power (+ charge / - discharge) the telemetry says is forced, else 0.
+
+        Decodes the canonical ``force_mode`` codes (1 charge, 2 discharge) with
+        ``set_charge_power`` / ``set_discharge_power``. Used as a last resort when
+        ``net_power_from_data`` cannot tell; a negative setpoint counts as 0.
+        """
+        try:
+            force_mode = int(round(float(data.get("force_mode"))))
+        except (TypeError, ValueError):
+            force_mode = 0
+        if force_mode == 1:
+            value = data.get("set_charge_power", 0)
+            sign = 1
+        elif force_mode == 2:
+            value = data.get("set_discharge_power", 0)
+            sign = -1
+        else:
+            return 0.0
+        try:
+            return sign * max(0.0, float(value or 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    def device_max_soc(self, data: dict) -> Optional[float]:
+        """The maximum SOC the device itself keeps, or None if it does not publish one.
+
+        None means the device stores no ceiling of its own, so the integration's
+        configured value is the only one. A driver whose device holds its own
+        Target SOC overrides this.
+        """
+        return None
+
+    def ac_register_power_w(self, data: dict) -> Optional[float]:
+        """The device's own AC-side reading in +charge / -discharge watts, or None.
+
+        None means the driver publishes no such reading (the default). A driver
+        whose telemetry carries one overrides this and converts its sign; it
+        raises ``TypeError``/``ValueError`` on a value that is not a number, like
+        the other sources.
+        """
+        return None
+
+    def ac_contribution_w(
+        self, data: dict, order: Sequence[AcSource] = AC_REGISTER_FIRST
+    ) -> Optional[float]:
+        """What the battery puts on (-) or takes from (+) the AC bus, in watts.
+
+        The first source in ``order`` that reads something wins; None when none
+        does. Which sources and in which order is the caller's explicit choice:
+        the sites that need it disagree and each keeps its own (see the
+        ``AC_*`` orders above, "diferencia conservada, decidir (plan section 8,
+        T7.4)"). A value that is not a number raises ``TypeError`` or
+        ``ValueError`` rather than falling through to the next source.
+        """
+        for source in order:
+            if source is AcSource.REGISTER:
+                value = self.ac_register_power_w(data)
+            elif source is AcSource.PORT:
+                value = data.get(DELIVERED_AC_POWER_KEY)
+            else:
+                value = data.get("battery_power")
+            if value is not None:
+                return float(value)
+        return None
 
     @property
     @abstractmethod

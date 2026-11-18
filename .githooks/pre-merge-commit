@@ -1,0 +1,24 @@
+#!/bin/sh
+# Runs the Dynamic Pricing planner invariant sweep (tests/test_predictive_sweep.py)
+# before a merge commit that brings changes to the predictive charging code.
+# Install once per clone: git config core.hooksPath .githooks
+# Skip once: git merge --no-verify. A merge that stops on conflicts is
+# committed with `git commit`, which does not run this hook.
+# What the merge brings in: the merged index against HEAD (MERGE_HEAD is not
+# written yet when the merge commits at once).
+changed=$(git diff --cached --name-only HEAD 2>/dev/null) || exit 0
+echo "$changed" | grep -qE '^(custom_components/omnibattery/(__init__\.py|pricing/|control/)|tests/(scenarios/|test_predictive_s(weep|cenarios)\.py|sweep_known\.json))' || exit 0
+# The test venv lives in the main checkout; a worktree uses that one.
+main=$(cd "$(git rev-parse --git-common-dir)/.." && pwd)
+py=
+for candidate in .venv-test/Scripts/python.exe .venv-test/bin/python         "$main/.venv-test/Scripts/python.exe" "$main/.venv-test/bin/python"; do
+    if [ -x "$candidate" ]; then py=$candidate; break; fi
+done
+if [ -z "$py" ]; then
+    echo "pre-merge-commit: no .venv-test, planner sweep skipped" >&2
+    exit 0
+fi
+# One case in eleven (~185 of 2016): the full grid takes ~3 minutes since the
+# optimizer; run it in full (`pytest -m sweep -n auto`) before a release.
+echo "pre-merge-commit: running a sample of the planner sweep (under a minute); git merge --no-verify skips it" >&2
+OMNI_SWEEP_SAMPLE=11 exec "$py" -m pytest -q -p no:cacheprovider -m sweep -n auto

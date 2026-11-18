@@ -24,6 +24,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
+from .infra.clock import local_now
 from .infra.entity_naming import english_entity_id, system_entity_id, SYSTEM_UNIQUE_ID_PREFIX
 from .const import (
     DOMAIN,
@@ -41,7 +42,11 @@ from .const import (
     DEFAULT_SLOT_ALLOW_DISCHARGE,
 )
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
-from .drivers.base import has_connected_mppt_pv
+from .drivers.base import (
+    KEY_BATTERY_SOC,
+    KEY_TOTAL_DISCHARGING_ENERGY,
+    has_connected_mppt_pv,
+)
 from .energy import (
     BACKUP_DISCHARGING_ENERGY_KEY,
     effective_total_discharging_energy,
@@ -57,7 +62,7 @@ from .sensors.calculated_sensors import (
     SyntheticEnergySensor,
     CumulativeDailyEnergySensor,
     SyntheticCapacitySensor,
-    ZendurePackSensor,
+    PackFieldSensor,
     SYNTHETIC_ENERGY_SENSOR_DEFINITIONS,
     CUMULATIVE_DAILY_ENERGY_SENSOR_DEFINITIONS,
 )
@@ -73,38 +78,27 @@ def _remove_obsolete_solar_entities(
     """Remove PV entities that no longer belong to the configured topology.
 
     Entity setup is additive from Home Assistant's point of view: omitting a
-    definition on reload does not remove an old registry entry. Clean model-
-    incompatible Anker solar entities and Venus A/D calculated PV entities when
-    the user declares that no panels are connected.
+    definition on reload does not remove an old registry entry. Each driver
+    names the entity suffixes its detected model and topology no longer own.
     """
     from homeassistant.helpers import entity_registry as er
 
     registry = er.async_get(hass)
     for coordinator in coordinators:
-        if (
-            getattr(coordinator, "brand", None) == "marstek"
-            and getattr(coordinator.capabilities, "has_mppt_pv", False)
-            and not has_connected_mppt_pv(coordinator)
-        ):
-            for suffix in ("solar_power", "battery_cell_power"):
-                unique_id = f"{coordinator.device_key}_{suffix}"
-                entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
+        driver = coordinator.driver
+        prefixes = (
+            (coordinator.device_key, coordinator.host, coordinator.name)
+            if driver.OBSOLETE_ENTITY_LEGACY_PREFIXES
+            else (coordinator.device_key,)
+        )
+        for suffix in driver.obsolete_entity_suffixes():
+            for prefix in prefixes:
+                entity_id = registry.async_get_entity_id(
+                    "sensor", DOMAIN, f"{prefix}_{suffix}"
+                )
                 registered = registry.async_get(entity_id) if entity_id else None
                 if registered and registered.config_entry_id == config_entry.entry_id:
                     registry.async_remove(entity_id)
-        if getattr(coordinator, "brand", None) != "anker":
-            continue
-        if getattr(getattr(coordinator, "driver", None), "has_independent_pv", False):
-            continue
-        for unique_id in (
-            f"{coordinator.device_key}_solar_power",
-            f"{coordinator.host}_solar_power",
-            f"{coordinator.name}_solar_power",
-        ):
-            entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
-            registered = registry.async_get(entity_id) if entity_id else None
-            if registered and registered.config_entry_id == config_entry.entry_id:
-                registry.async_remove(entity_id)
 
     # The system aggregate is only meaningful when at least one connected
     # battery contributes independent PV. Existing installations may still
@@ -189,13 +183,13 @@ async def async_setup_entry(
         # not energy counters — Sessy/Hoymiles have counters but no capacity.
         if not getattr(coordinator.capabilities, "has_nominal_capacity", True):
             entities.append(SyntheticCapacitySensor(coordinator))
-        pack_specs = getattr(coordinator.driver, "pack_field_specs", None)
+        pack_specs = coordinator.driver.pack_field_specs
         if pack_specs:
             data = coordinator.data or {}
             pack_count = sum(1 for i in range(1, 33) if f"pack{i}_soc" in data)
             for pack_index in range(1, pack_count + 1):
                 for spec in pack_specs:
-                    entities.append(ZendurePackSensor(coordinator, pack_index, spec))
+                    entities.append(PackFieldSensor(coordinator, pack_index, spec))
         # DC-coupled PV total + solar-corrected battery power exist only on
         # units that expose independent DC-coupled PV telemetry. Venus D/A
         # exposes individual MPPT inputs. Verified Anker E5000 entities expose
@@ -355,7 +349,7 @@ class MarstekVenusSensor(CoordinatorEntity, SensorEntity):
             return None
         key = self.definition["key"]
         value = self.coordinator.data.get(key)
-        if key == "total_discharging_energy":
+        if key == KEY_TOTAL_DISCHARGING_ENERGY:
             corrected = effective_total_discharging_energy(self.coordinator.data)
             if corrected is not None:
                 value = round(corrected, self.definition.get("precision", 2))
@@ -402,7 +396,7 @@ class MarstekVenusSensor(CoordinatorEntity, SensorEntity):
         (Marstek version / Zendure product) rides along here on the always-present
         battery_soc entity the panel already reads.
         """
-        if self.definition["key"] == "total_discharging_energy":
+        if self.definition["key"] == KEY_TOTAL_DISCHARGING_ENERGY:
             backup = self.coordinator.data.get(BACKUP_DISCHARGING_ENERGY_KEY)
             if backup is None:
                 return None
@@ -412,13 +406,14 @@ class MarstekVenusSensor(CoordinatorEntity, SensorEntity):
                 ),
                 "backup_discharging_energy": backup,
             }
-        if self.definition["key"] != "battery_soc":
+        if self.definition["key"] != KEY_BATTERY_SOC:
             return None
         model = getattr(self.coordinator.driver, "model_label", None)
         attributes = {"model": model} if model else {}
+        attributes["aggregate_solar"] = self.coordinator.driver.allows_aggregate_solar
         if getattr(self.coordinator.capabilities, "has_mppt_pv", False):
             attributes["dc_pv_connected"] = has_connected_mppt_pv(self.coordinator)
-        return attributes or None
+        return attributes
 
     @property
     def device_info(self):
@@ -458,7 +453,7 @@ class DischargeWindowSensor(SensorEntity):
         if not enabled_slots:
             return "no_slots"
 
-        now = datetime.now()
+        now = local_now()
         current_time = now.time()
         current_day = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][now.weekday()]
 
@@ -489,7 +484,7 @@ class DischargeWindowSensor(SensorEntity):
 
         # Find active slot number
         from datetime import datetime, time as dt_time
-        now = datetime.now()
+        now = local_now()
         current_time = now.time()
         current_day = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][now.weekday()]
         active_slot = None
@@ -765,6 +760,10 @@ class WeeklyFullChargeSensor(SensorEntity):
         batteries = self._controller._weekly_charge_status.get("batteries")
         if batteries:
             attrs["batteries"] = batteries
+        # Solar outlook of an active run (#876); absent while unknown.
+        for key in ("solar_sufficient", "energy_needed_kwh", "net_solar_kwh"):
+            if key in self._controller._weekly_charge_status:
+                attrs[key] = self._controller._weekly_charge_status[key]
         return attrs
 
     @property
@@ -952,7 +951,6 @@ class IntegrationStatusSensor(SensorEntity):
         action = c._capacity_protection_status.get("action")
         return {
             "shaving": "peak_shaving",
-            "shaving_excluded": "peak_shaving",
             "conserving": "capacity_conserving",
             "charging": "capacity_protection_charging",
         }.get(action, "capacity_protection")

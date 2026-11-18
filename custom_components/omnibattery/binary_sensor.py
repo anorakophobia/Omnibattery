@@ -12,6 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from .infra.clock import local_now
 from .const import (
     DOMAIN,
     CONF_CAPACITY_PROTECTION_ENABLED,
@@ -190,8 +191,9 @@ class CapacityProtectionStatusSensor(BinarySensorEntity):
     # While protection is active these numerics change every poll; keep the
     # on/off state + action/threshold in history, drop the per-cycle churn.
     _unrecorded_attributes = frozenset({
-        "avg_soc", "peak_limit_w", "estimated_house_load_w",
+        "avg_soc", "estimated_house_load_w",
         "original_target_w", "adjusted_target_w",
+        "cap_requested_w", "cap_delivered_w", "window_import_kwh", "window_cap_w",
     })
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
@@ -223,9 +225,18 @@ class CapacityProtectionStatusSensor(BinarySensorEntity):
             "excluded_devices_enabled": (
                 self.controller.capacity_protection_excluded_devices
             ),
+            # #506: whether the grid import cap is acting, what the battery
+            # must deliver to keep the meter under it, and what it delivers.
+            "grid_import_cap_active": status.get("grid_import_cap_active", False),
+            "cap_requested_w": status.get("cap_requested_w", 0),
+            "cap_delivered_w": status.get("cap_delivered_w", 0),
+            # 15-min window mode: this quarter's import, the import allowed for
+            # the rest of it, and whether the quarter is trusted yet.
+            "window_valid": status.get("window_valid", False),
+            "window_import_kwh": status.get("window_import_kwh"),
+            "window_cap_w": status.get("window_cap_w"),
             "avg_soc": status.get("avg_soc"),
             "soc_threshold": status.get("soc_threshold"),
-            "peak_limit_w": status.get("peak_limit"),
             "estimated_house_load_w": status.get("estimated_house_load"),
             "action": status.get("action"),
             "original_target_w": status.get("original_target"),
@@ -499,8 +510,8 @@ class CurtailmentStatusSensor(BinarySensorEntity):
             "inverter_curtailment_required": None,
         }
         if plan is None:
-            return attrs
-        now = datetime.now()
+            return self._plan_room_attrs(attrs)
+        now = local_now()
         next_window = next(
             (slot.start.isoformat() for slot in plan.risk_slots if slot.end > now),
             None,
@@ -561,6 +572,34 @@ class CurtailmentStatusSensor(BinarySensorEntity):
             attrs["inverter_curtailment_required"] = (
                 runtime_status == "protected_window" and headroom_deficit > 1e-6
             )
+        return self._plan_room_attrs(attrs)
+
+    def _plan_room_attrs(self, attrs: dict) -> dict:
+        """With the optimizer deciding, its risk windows and room slots replace
+        the module's (whose plan stays for the headroom diagnostics)."""
+        pricing = getattr(self.controller, "_pricing_mgr", None)
+        room = pricing._plan_room() if pricing is not None else None
+        if room is None:
+            return attrs
+        now = local_now()
+        risk = sorted(room.risk, key=lambda slot: slot.start)
+        attrs.update({
+            "decided_by": "plan",
+            "next_window": next((slot.start.isoformat() for slot in risk if slot.end > now), None),
+            "risk_slots": [
+                {"start": slot.start.isoformat(), "end": slot.end.isoformat(), "price": slot.price}
+                for slot in risk
+            ],
+            "selected_discharge_slots": [
+                {
+                    "start": slot.start.isoformat(),
+                    "end": slot.end.isoformat(),
+                    "price": slot.price,
+                    "power_w": round(power_kw * 1000.0),
+                }
+                for slot, (power_kw, _level) in sorted(room.orders.items(), key=lambda x: x[0].start)
+            ],
+        })
         return attrs
 
     @property
@@ -671,7 +710,6 @@ class PredictiveChargingStatusSensor(BinarySensorEntity):
             attrs["solar_forecast_source"] = self.controller.solar_forecast_source
 
         attrs["max_contracted_power"] = self.controller.max_contracted_power
-        attrs["icp_excluded_protection_w"] = round(getattr(self.controller, "_icp_excluded_protection_w", 0.0))
 
         # Home consumption diagnostics: home power is always derived
         # (grid + battery AC + solar); the household sensor was removed.
@@ -899,7 +937,7 @@ class PredictiveChargingStatusSensor(BinarySensorEntity):
             try:
                 forecast = read_solar_forecast_kwh(self.hass, self.controller)
                 if forecast is not None:
-                    now = datetime.now()
+                    now = local_now()
                     remaining = self.controller._pricing_mgr._remaining_solar_today_kwh(now)
                     attrs["remaining_solar_kwh"] = round(max(0.0, float(remaining)), 2)
             except (AttributeError, TypeError, ValueError):

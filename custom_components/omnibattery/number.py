@@ -51,6 +51,15 @@ from .const import (
     effective_system_power,
     total_battery_power,
 )
+from .drivers.base import (
+    KEY_CHARGING_CUTOFF_CAPACITY,
+    KEY_DISCHARGING_CUTOFF_CAPACITY,
+    KEY_MAX_CHARGE_POWER,
+    KEY_MAX_DISCHARGE_POWER,
+    KEY_SET_CHARGE_POWER,
+    KEY_SET_DISCHARGE_POWER,
+    canonical_key,
+)
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
 from .infra.manual_control import assert_manual_control
 from .infra.entity_naming import (
@@ -98,7 +107,7 @@ async def async_setup_entry(
     for coordinator in coordinators:
         for definition in coordinator.number_definitions:
             entities.append(MarstekVenusNumber(coordinator, definition))
-        entities.append(MarstekBackupThresholdNumber(coordinator))
+        entities.append(BackupThresholdNumber(coordinator))
 
         # For batteries without hardware SOC cutoff registers (v3/vA/vD), expose
         # software-enforced max/min SOC as live-editable entities. The PD controller
@@ -111,29 +120,29 @@ async def async_setup_entry(
         # twin is skipped.
         if not coordinator.capabilities.hardware_soc_cutoff:
             register_keys = {d["key"] for d in coordinator.number_definitions}
-            if "charging_cutoff_capacity" not in register_keys:
+            if KEY_CHARGING_CUTOFF_CAPACITY not in register_keys:
                 entities.append(SoftSocLimitNumber(coordinator, "max"))
-            if "discharging_cutoff_capacity" not in register_keys:
+            if KEY_DISCHARGING_CUTOFF_CAPACITY not in register_keys:
                 entities.append(SoftSocLimitNumber(coordinator, "min"))
 
         if coordinator.enable_charge_hysteresis:
-            entities.append(MarstekChargeHysteresisNumber(coordinator))
+            entities.append(ChargeHysteresisNumber(coordinator))
 
         # Drivers without force_mode/set_*_power registers (Zendure) get
         # software manual-power setpoints; the controller applies them via
         # apply_setpoint while global manual mode or individual battery manual
         # ownership is active.
         if coordinator.needs_software_manual_control:
-            entities.append(MarstekManualSetPowerNumber(coordinator, "charge"))
-            entities.append(MarstekManualSetPowerNumber(coordinator, "discharge"))
+            entities.append(ManualSetPowerNumber(coordinator, "charge"))
+            entities.append(ManualSetPowerNumber(coordinator, "discharge"))
 
         # Drivers whose max_charge_power is not a writable register (Zendure
         # chargeMaxLimit telemetry, Anker 10036 read-only sensor) get a software
         # charge-power ceiling under the device/hardware cap.
         if coordinator.needs_software_max_charge:
-            entities.append(MarstekSoftMaxChargeNumber(coordinator))
+            entities.append(SoftMaxChargeNumber(coordinator))
         if coordinator.needs_software_max_discharge:
-            entities.append(MarstekSoftMaxDischargeNumber(coordinator))
+            entities.append(SoftMaxDischargeNumber(coordinator))
 
     # Add config numbers (system-level, PD parameters). Conditional entities are
     # gated on their feature key being present (enabled OR disabled) — the panel
@@ -159,7 +168,7 @@ async def async_setup_entry(
             continue
         if condition in dynamic_pricing_only and not is_dynamic_pricing:
             continue
-        entities.append(MarstekConfigNumberEntity(hass, entry, definition))
+        entities.append(ConfigNumberEntity(hass, entry, definition))
 
     # Dynamic-pricing charge ceiling / discharge floor as live entities (#408),
     # so automations can rewrite them. Scoped to dynamic-pricing mode (the
@@ -168,10 +177,10 @@ async def async_setup_entry(
         entry.data.get("enable_predictive_charging")
         and entry.data.get(CONF_PREDICTIVE_CHARGING_MODE) == PREDICTIVE_MODE_DYNAMIC_PRICING
     ):
-        entities.append(MarstekPriceThresholdNumber(hass, entry, "charge"))
-        entities.append(MarstekPriceThresholdNumber(hass, entry, "discharge"))
-        entities.append(MarstekArbitrageNumber(hass, entry, "margin"))
-        entities.append(MarstekArbitrageNumber(hass, entry, "efficiency"))
+        entities.append(PriceThresholdNumber(hass, entry, "charge"))
+        entities.append(PriceThresholdNumber(hass, entry, "discharge"))
+        entities.append(ArbitrageNumber(hass, entry, "margin"))
+        entities.append(ArbitrageNumber(hass, entry, "efficiency"))
         entities.append(SmartPredischargeNumber(hass, entry, "threshold"))
         entities.append(SmartPredischargeNumber(hass, entry, "reserve"))
 
@@ -218,11 +227,11 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
     def native_max_value(self):
         """Expose the configured max power as the setpoint slider ceiling."""
         key = self.definition["key"]
-        if key == "set_charge_power":
+        if key == KEY_SET_CHARGE_POWER:
             return _effective_setpoint_max(
                 self.coordinator, "charge", self.definition["max"]
             )
-        if key == "set_discharge_power":
+        if key == KEY_SET_DISCHARGE_POWER:
             return _effective_setpoint_max(
                 self.coordinator, "discharge", self.definition["max"]
             )
@@ -238,8 +247,8 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
         the options flow (#815). The driver still writes 800 W on the wire.
         """
         if self.definition["key"] in (
-            "max_charge_power",
-            "max_discharge_power",
+            KEY_MAX_CHARGE_POWER,
+            KEY_MAX_DISCHARGE_POWER,
         ) and getattr(self.coordinator, "needs_software_power_cap", False):
             return _SOFTWARE_POWER_CAP_MIN_W
         return self.definition["min"]
@@ -255,7 +264,7 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
         """
         key = self.definition["key"]
         if getattr(self.coordinator, "needs_software_power_cap", False):
-            if key == "max_charge_power":
+            if key == KEY_MAX_CHARGE_POWER:
                 return float(
                     getattr(
                         self.coordinator,
@@ -263,7 +272,7 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
                         self.coordinator.user_max_charge_power,
                     )
                 )
-            if key == "max_discharge_power":
+            if key == KEY_MAX_DISCHARGE_POWER:
                 return float(
                     getattr(
                         self.coordinator,
@@ -276,9 +285,9 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
         value = self.coordinator.data.get(key)
         if value is None:
             return None
-        if key == "set_charge_power":
+        if key == KEY_SET_CHARGE_POWER:
             return min(float(value), float(self.native_max_value))
-        if key == "set_discharge_power":
+        if key == KEY_SET_DISCHARGE_POWER:
             return min(float(value), float(self.native_max_value))
         return value
 
@@ -291,9 +300,9 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
         # The setpoint registers are re-asserted by the control loop every
         # cycle; refuse the write instead of reverting it silently.
         assert_manual_control(self.hass, self.coordinator, key)
-        if key == "set_charge_power":
+        if key == KEY_SET_CHARGE_POWER:
             value = max(0.0, min(float(value), float(self.native_max_value)))
-        elif key == "set_discharge_power":
+        elif key == KEY_SET_DISCHARGE_POWER:
             value = max(0.0, min(float(value), float(self.native_max_value)))
 
         # Convert value using scale factor if needed
@@ -310,14 +319,14 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
         # while the polling path also sees the device's hardware cap. Keep the
         # user value current before the write triggers an immediate refresh; the
         # wire value itself remains owned by the driver.
-        if key == "max_charge_power" and getattr(
+        if key == KEY_MAX_CHARGE_POWER and getattr(
             self.coordinator, "needs_software_power_cap", False
         ):
             self.coordinator.user_max_charge_power = int(value)
             self.coordinator.persist_battery_config(
                 "user_max_charge_power", int(value)
             )
-        elif key == "max_discharge_power" and getattr(
+        elif key == KEY_MAX_DISCHARGE_POWER and getattr(
             self.coordinator, "needs_software_power_cap", False
         ):
             self.coordinator.user_max_discharge_power = int(value)
@@ -327,14 +336,14 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
 
         # Write the converted value via the logical control key
         written = await self.coordinator.write_control(key, register_value, do_refresh=True)
-        if key in ("set_charge_power", "set_discharge_power"):
+        if key in (KEY_SET_CHARGE_POWER, KEY_SET_DISCHARGE_POWER):
             # Manual intent for the #477 re-assert (see select force_mode).
             setattr(self.coordinator, f"manual_{key}", int(value))
             self.coordinator.persist_battery_config(f"manual_{key}", int(value))
 
         # Update coordinator attributes immediately for control loop
         # This ensures changes take effect immediately without waiting for scan_interval
-        if self.definition['key'] == 'charging_cutoff_capacity':
+        if self.definition['key'] == KEY_CHARGING_CUTOFF_CAPACITY:
             old_max_soc = self.coordinator.max_soc
             self.coordinator.max_soc = value
             self.coordinator.persist_battery_config("max_soc", int(value))
@@ -351,14 +360,14 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
             _LOGGER.info("%s: Updated max_soc %.1f%% → %.1f%% (immediate sync)",
                          self.coordinator.name, old_max_soc, value)
 
-        elif self.definition['key'] == 'discharging_cutoff_capacity':
+        elif self.definition['key'] == KEY_DISCHARGING_CUTOFF_CAPACITY:
             old_min_soc = self.coordinator.min_soc
             self.coordinator.min_soc = value
             self.coordinator.persist_battery_config("min_soc", int(value))
             _LOGGER.info("%s: Updated min_soc %.1f%% → %.1f%% (immediate sync)",
                          self.coordinator.name, old_min_soc, value)
 
-        elif self.definition['key'] == 'max_charge_power':
+        elif self.definition['key'] == KEY_MAX_CHARGE_POWER:
             old_value = getattr(
                 self.coordinator,
                 "effective_max_charge_power",
@@ -369,10 +378,10 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
             _LOGGER.info("%s: Updated max_charge_power %dW → %dW (immediate sync)",
                          self.coordinator.name, old_value, int(value))
 
-        # Zendure exposes the user-facing discharge ceiling as
-        # ``inverse_max_power``; keep it on the same coordinator path as the
+        # A driver that publishes the discharge ceiling under another key declares
+        # it with ``canonical_key``; keep it on the same coordinator path as the
         # canonical ``max_discharge_power`` key used by the control loop.
-        elif self.definition['key'] in ('max_discharge_power', 'inverse_max_power'):
+        elif canonical_key(self.definition) == KEY_MAX_DISCHARGE_POWER:
             old_value = getattr(
                 self.coordinator,
                 "effective_max_discharge_power",
@@ -396,7 +405,7 @@ class MarstekVenusNumber(CoordinatorEntity, NumberEntity):
         # Venus E v2/v3 max-power keys hold the 800/2500 W hardware selector in
         # coordinator.data (read as device_max_*); the user value lives in
         # configured_max_* and native_value already shows it.
-        software_capped = key in ("max_charge_power", "max_discharge_power") and getattr(
+        software_capped = key in (KEY_MAX_CHARGE_POWER, KEY_MAX_DISCHARGE_POWER) and getattr(
             self.coordinator, "needs_software_power_cap", False
         )
         if written and not software_capped and isinstance(self.coordinator.data, dict):
@@ -509,7 +518,7 @@ def config_number_default(hass, entry, definition: dict):
     return default(entry.data, reported() if callable(reported) else None)
 
 
-class MarstekConfigNumberEntity(NumberEntity):
+class ConfigNumberEntity(NumberEntity):
     """Number entity for system-level configuration parameters (PD controller, etc.)."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, definition: dict) -> None:
@@ -610,7 +619,7 @@ class MarstekConfigNumberEntity(NumberEntity):
         }
 
 
-class MarstekArbitrageNumber(NumberEntity):
+class ArbitrageNumber(NumberEntity):
     """Minimum arbitrage margin and round-trip efficiency for the charge gate.
 
     The margin is unset by default, which leaves grid-charge slot selection
@@ -724,7 +733,7 @@ class MarstekArbitrageNumber(NumberEntity):
         }
 
 
-class MarstekPriceThresholdNumber(NumberEntity):
+class PriceThresholdNumber(NumberEntity):
     """Live-editable dynamic-pricing charge ceiling / discharge floor (#408).
 
     Mirrors the optional config-flow value into ``config_entry.data`` so an
@@ -1128,7 +1137,7 @@ class SoftSocLimitNumber(CoordinatorEntity, NumberEntity):
         return self.coordinator.battery_device_info
 
 
-class MarstekBackupThresholdNumber(CoordinatorEntity, NumberEntity):
+class BackupThresholdNumber(CoordinatorEntity, NumberEntity):
     """Number entity for the per-battery backup offgrid load threshold.
 
     This value has no Modbus register — it is a software-only config parameter
@@ -1170,7 +1179,7 @@ class MarstekBackupThresholdNumber(CoordinatorEntity, NumberEntity):
         return self.coordinator.battery_device_info
 
 
-class MarstekManualSetPowerNumber(CoordinatorEntity, NumberEntity):
+class ManualSetPowerNumber(CoordinatorEntity, NumberEntity):
     """Manual charge/discharge power setpoint for drivers without force_mode /
     set_*_power registers (Zendure).
 
@@ -1262,7 +1271,7 @@ class MarstekManualSetPowerNumber(CoordinatorEntity, NumberEntity):
         return self.coordinator.battery_device_info
 
 
-class MarstekSoftMaxChargeNumber(CoordinatorEntity, NumberEntity):
+class SoftMaxChargeNumber(CoordinatorEntity, NumberEntity):
     """Software charge-power ceiling when max_charge_power is not writable
     (Zendure chargeMaxLimit telemetry, Anker input 10036 sensor).
 
@@ -1330,7 +1339,7 @@ class MarstekSoftMaxChargeNumber(CoordinatorEntity, NumberEntity):
         return self.coordinator.battery_device_info
 
 
-class MarstekSoftMaxDischargeNumber(CoordinatorEntity, NumberEntity):
+class SoftMaxDischargeNumber(CoordinatorEntity, NumberEntity):
     """Software discharge-power ceiling when max_discharge_power has no writable
     register (Anker input 10038 sensor, or other telemetry-only drivers).
     """
@@ -1392,7 +1401,7 @@ class MarstekSoftMaxDischargeNumber(CoordinatorEntity, NumberEntity):
         return self.coordinator.battery_device_info
 
 
-class MarstekChargeHysteresisNumber(CoordinatorEntity, NumberEntity):
+class ChargeHysteresisNumber(CoordinatorEntity, NumberEntity):
     """Number entity for the per-battery charge hysteresis percentage.
 
     This value is stored in config_entry.data and read by the PD controller at runtime.

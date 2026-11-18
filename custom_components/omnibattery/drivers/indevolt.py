@@ -1,6 +1,6 @@
 """Local HTTP driver for Indevolt batteries (SolidFlex / PowerFlex, Gen 2).
 
-All device traffic goes through :class:`~..infra.indevolt_client.IndevoltScheduler`:
+All device traffic goes through :class:`~.indevolt_client.IndevoltScheduler`:
 one request per slot, writes first, and a timestamped cache that
 :meth:`IndevoltDriver.read_telemetry` serves to the coordinator. The coordinator
 can poll as often as it likes; the device sees the scheduler's pace.
@@ -43,7 +43,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Optional, Protocol
 
-from ..infra.indevolt_client import (
+from .indevolt_client import (
+    CONF_INDEVOLT_REQUEST_SPEED,
     ACTION_CHARGE,
     ACTION_DISCHARGE,
     ACTION_STOP,
@@ -63,7 +64,10 @@ from ..infra.indevolt_client import (
     Transport,
     normal_slot,
     pacing_levels,
+    slot_for_request_speed,
 )
+from .indevolt_flow import INDEVOLT_SETUP
+from .indevolt_notify import IndevoltNotifier
 from ..infra.mac_tracking import normalise_mac
 from .indevolt_settings import BY_KEY as SETTING_BY_KEY
 from .indevolt_settings import (
@@ -78,6 +82,8 @@ from .base import (
     DELIVERED_AC_POWER_KEY,
     BatteryDriver,
     DriverCapabilities,
+    DriverContext,
+    DriverTraits,
     ReadGroup,
     SetpointResult,
     TelemetrySnapshot,
@@ -562,6 +568,41 @@ class Notifier(Protocol):
 class IndevoltDriver(BatteryDriver):
     """Monitor and control one Indevolt battery through its local HTTP API."""
 
+    BRAND = "indevolt"
+    SETUP = INDEVOLT_SETUP
+    TRAITS = DriverTraits(
+        supports_voltage_taper=False, ip_addressed=True, min_soc_range=(5, 50, 20)
+    )
+    LABEL = "Indevolt SolidFlex / PowerFlex"
+    MANUFACTURER = "Indevolt"
+    DEFAULT_MODEL = "Indevolt"
+
+    @classmethod
+    def from_config(cls, battery_config, context: DriverContext) -> "IndevoltDriver":
+        host = battery_config["host"]
+        port = battery_config["port"]
+        request_speed = battery_config.get(CONF_INDEVOLT_REQUEST_SPEED)
+        # The driver paces all device traffic itself; polls read its cache.
+        driver = cls(
+            host,
+            port=port,
+            max_charge_power_w=context.max_charge_power_w,
+            max_discharge_power_w=context.max_discharge_power_w,
+            # Notification ids stay keyed on host and port, not on the device key.
+            notifier=IndevoltNotifier(context.hass, context.name, f"{host}_{port}"),
+            # The settings sync stores what it adopted from or wrote to the
+            # device in this battery's config.
+            persist=context.persist,
+            stored=context.stored,
+            slot_s=slot_for_request_speed(request_speed),
+            name=context.name,
+        )
+        driver._request_speed = request_speed
+        return driver
+
+    def coordinator_attributes(self) -> dict:
+        return {"indevolt_request_speed": self._request_speed}
+
     def __init__(
         self,
         host: str,
@@ -586,6 +627,7 @@ class IndevoltDriver(BatteryDriver):
         self._clock = clock
         self._sleep = sleep
         self._slot_s = slot_s
+        self._request_speed: str | None = None
         self._name = name
         self._control_enabled = control_enabled
         self._notifier = notifier
@@ -668,6 +710,9 @@ class IndevoltDriver(BatteryDriver):
     @property
     def model_label(self) -> Optional[str]:
         return model_label_for(self._model_code)
+
+    def software_version(self, data: dict) -> Optional[str]:
+        return data.get("software_version")
 
     @property
     def serial(self) -> Optional[str]:
@@ -1186,6 +1231,11 @@ class IndevoltDriver(BatteryDriver):
         values, applied = self._tuple_for(int(net_power_w), soc)
         self._send(values, applied)
         return SetpointResult(True, applied, False, applied={"control_status": self.control_status})
+
+    def ac_register_power_w(self, data: dict):
+        # ``ac_power`` is +discharge / -charge; the query speaks +charge.
+        value = data.get("ac_power")
+        return None if value is None else -float(value)
 
     def net_power_from_data(self, data: dict) -> Optional[int]:
         """The commanded net power while owned; None makes the core write again."""

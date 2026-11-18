@@ -52,12 +52,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 from typing import Optional
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
-from ..infra.huawei_modbus_client import (
+from .huawei_client import (
     HuaweiModbusClient,
     decode_i16,
     decode_i32,
@@ -65,9 +66,12 @@ from ..infra.huawei_modbus_client import (
     decode_u16,
     decode_u32,
 )
+from .huawei_flow import HUAWEI_SETUP
 from .base import (
     BatteryDriver,
     DriverCapabilities,
+    DriverContext,
+    DriverTraits,
     ReadGroup,
     SetpointResult,
     TelemetrySnapshot,
@@ -259,6 +263,13 @@ _BLOCK_STATE3 = (32003, 2, "medium", {
 # to 24 strings; four is where the battery panel's MPPT card stops, so reading
 # further would produce entities nothing displays.
 _MAX_PV_STRINGS = 4
+
+
+def _pv_string_keys(count: int) -> tuple[str, ...]:
+    """The ``mppt<n>_power`` keys published for ``count`` wired PV strings."""
+    return tuple(f"mppt{index}_power" for index in range(1, count + 1))
+
+
 _BLOCK_STRINGS = (32016, _MAX_PV_STRINGS * 2, "high", {
     key: (offset, kind, scale)
     for index in range(1, _MAX_PV_STRINGS + 1)
@@ -451,6 +462,30 @@ SENSOR_DEFINITIONS = [
 class HuaweiSolarDriver(BatteryDriver):
     """One Huawei inverter's attached LUNA2000, read natively and driven by service."""
 
+    BRAND = "huawei"
+    SETUP = HUAWEI_SETUP
+    TRAITS = DriverTraits(supports_voltage_taper=False, min_soc_range=(0, 30, 10))
+    LABEL = "Huawei SUN2000 + LUNA2000"
+    MANUFACTURER = "Huawei"
+    DEFAULT_MODEL = "Venus"
+
+    @classmethod
+    def from_config(cls, battery_config, context: DriverContext) -> "HuaweiSolarDriver":
+        # Telemetry is read natively over Modbus; set-points go out through the
+        # huawei_solar integration, which owns the battery device named here.
+        # Both halves address the same inverter.
+        return cls(
+            context.hass,
+            battery_config["host"],
+            port=battery_config["port"],
+            slave_id=battery_config.get("slave_id", 1),
+            battery_device_id=battery_config.get("huawei_battery_device_id") or "",
+            direct_write=battery_config.get("huawei_direct_write", False),
+            emma_slave_id=battery_config.get("huawei_emma_slave_id"),
+            max_charge_power_w=context.max_charge_power_w,
+            max_discharge_power_w=context.max_discharge_power_w,
+        )
+
     def __init__(
         self,
         hass: HomeAssistant,
@@ -531,6 +566,7 @@ class HuaweiSolarDriver(BatteryDriver):
             max_charge_power_w=max_charge_power_w,
             max_discharge_power_w=max_discharge_power_w,
             has_mppt_pv=False,
+            mppt_power_keys=_pv_string_keys(self._pv_strings),
             has_alarm_registers=False,
             has_rs485_control=False,
             has_energy_counters=True,
@@ -822,6 +858,9 @@ class HuaweiSolarDriver(BatteryDriver):
 
         if snapshot.get("pv_string_count") is not None:
             self._pv_strings = max(0, min(_MAX_PV_STRINGS, int(snapshot["pv_string_count"])))
+            self._capabilities = replace(
+                self._capabilities, mppt_power_keys=_pv_string_keys(self._pv_strings)
+            )
         for index in range(1, _MAX_PV_STRINGS + 1):
             volts = snapshot.pop(f"pv{index}_voltage", None)
             amps = snapshot.pop(f"pv{index}_current", None)
@@ -1353,6 +1392,21 @@ class HuaweiSolarDriver(BatteryDriver):
             return None
         return max(0, ceiling - non_battery_ac)
 
+    def backup_enabled(self, data: dict) -> Optional[bool]:
+        # A hybrid inverter has no backup switch: it reports a state, and only
+        # off-grid or ready-to-go-off-grid mean the output is armed.
+        value = data.get("backup_function")
+        if isinstance(value, str):
+            return value in ("Off-grid", "Ready")
+        return super().backup_enabled(data)
+
+    @property
+    def manual_control_by_registers(self) -> bool:
+        # The capability is True (the hybrid inverter has a forcible-charge
+        # register) but no force_mode select / set_*_power number is published,
+        # so manual control is asserted by software, as before.
+        return False
+
     def net_power_from_data(self, data: dict) -> Optional[int]:
         mode = data.get("force_mode")
         charge = data.get("set_charge_power")
@@ -1513,12 +1567,6 @@ class HuaweiSolarDriver(BatteryDriver):
             self._last_written_w = None
             self._last_write_monotonic = 0.0
         return ok
-
-    async def set_rs485_control(self, enable: bool) -> bool:
-        return False
-
-    async def get_rs485_control(self) -> Optional[bool]:
-        return None
 
     # --- config-flow probe ---------------------------------------------------
 

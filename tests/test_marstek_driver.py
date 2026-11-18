@@ -24,9 +24,9 @@ from custom_components.omnibattery.const import (
     MESSAGE_WAIT_MS_RS485_GATEWAY,
     READ_TIMEOUT_S,
     REGISTER_MAP,
-    max_power_for_battery_version,
 )
-from custom_components.omnibattery.infra.modbus_client import BLOCK_REFUSED
+from custom_components.omnibattery.drivers.marstek import max_power_for_battery_version
+from custom_components.omnibattery.drivers.marstek_client import BLOCK_REFUSED
 
 
 def _fake_client():
@@ -241,11 +241,14 @@ def test_definitions_loaded_from_version_when_not_injected():
         BINARY_SENSOR_DEFINITIONS,
         BUTTON_DEFINITIONS,
     )
+    from custom_components.omnibattery.drivers.marstek_alarms import with_alarm_registers
     drv = MarstekModbusDriver("1.2.3.4", 502, "v2", client=_fake_client())
-    assert drv.sensor_definitions is SENSOR_DEFINITIONS
+    # The v2 sensor set is the shared register file plus the driver's own
+    # fault/alarm registers (marstek_alarms), so no longer the same list.
+    assert drv.sensor_definitions == with_alarm_registers(SENSOR_DEFINITIONS)
     assert drv.button_definitions is BUTTON_DEFINITIONS
     assert drv.all_definitions == (
-        SENSOR_DEFINITIONS + NUMBER_DEFINITIONS + SELECT_DEFINITIONS
+        with_alarm_registers(SENSOR_DEFINITIONS) + NUMBER_DEFINITIONS + SELECT_DEFINITIONS
         + SWITCH_DEFINITIONS + BINARY_SENSOR_DEFINITIONS
     )
     # all_definitions is the polled union; buttons (stateless) are excluded.

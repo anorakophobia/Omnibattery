@@ -20,10 +20,12 @@ from custom_components.omnibattery import ChargeDischargeController
 from custom_components.omnibattery.const import (
     CHARGE_EFFICIENCY,
     PREDICTIVE_MODE_DYNAMIC_PRICING,
+    PREDICTIVE_MODE_TIME_SLOT,
 )
 from custom_components.omnibattery.pricing import PriceSlot
 from custom_components.omnibattery.pricing.engine import PricingManager
 from custom_components.omnibattery.tracking.consumption_profile import ConsumptionForecast
+from tests.conftest import _FakeMarstekDriver
 
 
 class _Coord:
@@ -31,6 +33,7 @@ class _Coord:
         self.min_soc = min_soc
         self.max_soc = max_soc
         self.data = {"battery_soc": soc, "battery_total_energy": capacity_kwh}
+        self.driver = _FakeMarstekDriver()
 
 
 async def _noop():
@@ -665,7 +668,7 @@ def test_lower_soc_at_window_start_asks_for_more_energy():
 def _held_floor_decision(soc, limit_w):
     manager = _floor_manager(soc)
     manager._controller._is_capacity_protection_soc_limited = lambda: True
-    manager._controller.capacity_protection_limit = limit_w
+    manager._controller.max_contracted_power = limit_w
     return manager._apply_time_slot_chronological_plan(
         {
             "should_charge": False,
@@ -686,12 +689,13 @@ def test_peak_shaving_hold_does_not_project_an_overnight_floor_charge():
 
 
 def test_peak_shaving_hold_still_counts_load_above_the_limit():
-    # 362 W load against a 50 W limit: the battery still shaves 312 W all
-    # night, which drains 45% past the 20% floor before sunrise.
+    # 362 W load against a 50 W cap: the battery still shaves 312 W all
+    # night, which drains 45% past the 20% floor before sunrise. The cap is
+    # also the grid import cap (#506), so it limits the charge that could
+    # answer the floor; only the floor projection is asserted here.
     decision = _held_floor_decision(45.0, limit_w=50)
 
     assert decision["floor_active"] is True
-    assert decision["should_charge"] is True
 
 
 def _no_discharge_floor_decision(scope):
@@ -829,7 +833,7 @@ def test_floor_below_the_band_charges_even_when_the_fleet_gap_is_small():
     """
     manager = _floor_manager(28.0, 33.0, floor=35.0)
     manager._controller._is_capacity_protection_soc_limited = lambda: True
-    manager._controller.capacity_protection_limit = 3600
+    manager._controller.max_contracted_power = 3600
     decision = manager._apply_time_slot_chronological_plan(
         {
             "should_charge": False,
@@ -1008,7 +1012,6 @@ def _shaving_floor_decision(threshold, *, held=False, floor=20.0):
     if threshold is not None:
         controller.capacity_protection_enabled = True
         controller.capacity_protection_soc_threshold = threshold
-        controller.capacity_protection_limit = 14000  # never caps the grid charge
         controller._is_capacity_protection_soc_limited = lambda: held
         controller._planning_floor_soc = (
             lambda c: ChargeDischargeController._planning_floor_soc(controller, c)
@@ -1054,13 +1057,14 @@ def test_peak_shaving_hold_keeps_min_soc_floor_for_the_projection():
 
 @pytest.mark.parametrize(
     ("margin", "reserve_on", "expected"),
-    [(0.05, True, True), (0.05, False, False), (0.0, True, False)],
+    [(0.05, True, True), (0.05, False, False), (0.0, True, True)],
 )
 def test_the_plan_knows_whether_the_discharge_reserve_holds_energy(
     margin, reserve_on, expected
 ):
     # The reserve lets a valued deadline be served across an hour left to the
-    # grid, so it only matters while deadlines are valued (margin on).
+    # grid, so it only matters while deadlines are valued (always, in Dynamic
+    # Pricing: a zero margin means round-trip losses only).
     now = datetime(2026, 9, 11, 1, 0, tzinfo=_FLOOR_TZ)
     slots = [
         PriceSlot(now + timedelta(hours=h), now + timedelta(hours=h + 1), 0.40)
@@ -1092,6 +1096,45 @@ def test_the_plan_knows_whether_the_discharge_reserve_holds_energy(
     )
 
     assert requests[0].reserve_holds is expected
+
+
+@pytest.mark.parametrize(
+    ("mode", "efficiency"),
+    [(PREDICTIVE_MODE_DYNAMIC_PRICING, 0.85), (PREDICTIVE_MODE_TIME_SLOT, None)],
+)
+def test_zero_margin_values_deadlines_in_dynamic_pricing_only(mode, efficiency):
+    # Margin 0 means "round-trip losses only" in Dynamic Pricing; Time Slot
+    # prices are synthetic and never valued.
+    now = datetime(2026, 9, 11, 1, 0, tzinfo=_FLOOR_TZ)
+    slots = [
+        PriceSlot(now + timedelta(hours=h), now + timedelta(hours=h + 1), 0.40)
+        for h in range(5)
+    ]
+    manager = _floor_manager(25.0)
+    manager._controller.min_arbitrage_margin = 0.0
+    manager._controller.predictive_charging_mode = mode
+    manager._controller.round_trip_efficiency = 0.85
+    requests = []
+    evaluate = manager.evaluate_chronological_projection
+    manager.evaluate_chronological_projection = lambda request: (
+        requests.append(request) or evaluate(request)
+    )
+
+    manager._build_chronological_plan(
+        now=now,
+        slots=slots,
+        decision_data={
+            "should_charge": True,
+            "avg_consumption_kwh": _FLOOR_BASE_KW * 24,
+            "energy_deficit_kwh": 1.25,
+            "planned_grid_charge_kwh": 1.25,
+            "excluded_demand_claim_kwh": 0.0,
+        },
+        price_ceiling=None,
+    )
+
+    assert requests[0].import_value_efficiency == efficiency
+    assert requests[0].import_value_margin == 0.0
 
 
 def test_the_plan_sizes_its_slots_with_the_power_the_fleet_averages():

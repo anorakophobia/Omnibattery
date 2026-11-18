@@ -15,7 +15,7 @@ from unittest.mock import patch
 from custom_components.omnibattery import async_migrate_entry
 from custom_components.omnibattery.const import CONF_ROUND_TRIP_EFFICIENCY
 from custom_components.omnibattery.energy import effective_round_trip_efficiency
-from custom_components.omnibattery.number import MarstekArbitrageNumber
+from custom_components.omnibattery.number import ArbitrageNumber
 from custom_components.omnibattery.switch import RoundTripEfficiencyMeasuredSwitch
 
 DOMAIN = "omnibattery"
@@ -73,7 +73,7 @@ def _entities(data):
     controller.update_pd_parameters = reload
     entry = SimpleNamespace(data=dict(data), entry_id="entry")
     hass = SimpleNamespace(data={DOMAIN: {"entry": {"controller": controller}}}, config_entries=_Entries())
-    slider = MarstekArbitrageNumber(hass, entry, "efficiency")
+    slider = ArbitrageNumber(hass, entry, "efficiency")
     switch = RoundTripEfficiencyMeasuredSwitch(hass, entry, controller)
     switch.async_write_ha_state = lambda: None
     return entry, slider, switch
@@ -123,7 +123,7 @@ async def _migrate(data):
     entry = SimpleNamespace(version=16, entry_id="entry", data=dict(data))
     with _no_registry():
         assert await async_migrate_entry(hass, entry) is True
-    assert entry.version == 17
+    assert entry.version == 18
     return entry.data
 
 
@@ -152,6 +152,6 @@ def test_the_panel_shows_the_switch_and_a_measured_tag():
 def test_an_unset_arbitrage_margin_reads_as_0_so_the_panel_shows_it():
     # unknown would be dropped by the panel; 0 and unset both mean off
     entry = SimpleNamespace(data={}, entry_id="entry")
-    assert MarstekArbitrageNumber(SimpleNamespace(data={}), entry, "margin").native_value == 0.0
+    assert ArbitrageNumber(SimpleNamespace(data={}), entry, "margin").native_value == 0.0
     entry.data = {"min_arbitrage_margin": 0.05}
-    assert MarstekArbitrageNumber(SimpleNamespace(data={}), entry, "margin").native_value == 0.05
+    assert ArbitrageNumber(SimpleNamespace(data={}), entry, "margin").native_value == 0.05

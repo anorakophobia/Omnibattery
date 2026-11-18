@@ -63,15 +63,31 @@ Restart Home Assistant after adding the `rest_command`, and retain the default R
 
 By default it sets `-50 W` while charging (a small grid export) and `+50 W` while discharging (a small grid import). The active-power threshold ignores noise near zero. The automation runs when power crosses the threshold and when Home Assistant starts.
 
+## Weekly full charge grid boost
+
+[Import blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/weekly_full_charge_grid_boost_blueprint.yaml)
+
+- **Purpose:** finishes the weekly full charge from the grid when today's sun alone cannot reach 100 %, for installations with **Predictive Charging** off.
+- **Requires:** the **Weekly Full Charge** sensor, the **PD Target Grid Power** number, and a solar forecast sensor configured in Omnibattery.
+- **Controls:** the **PD Target Grid Power** number only.
+- **Compatible with:** any installation using PD grid-following control.
+- **Does not do:** boost while **Predictive Charging** is on, or reset a target that was changed by hand during the run.
+
+While the run is charging and the sensor's `solar_sufficient` attribute is `false`, the target is raised to the boost value (`2000 W` by default; the batteries take that minus the home load, within the number's limits). It stays raised until the run ends (`complete` or `idle`), even when the verdict turns `true` as the batteries fill, and then returns to the normal value (`0 W` by default).
+
 ## Peak shaving limit sync
 
 [Import blueprint](https://raw.githubusercontent.com/ffunes/Omnibattery/main/blueprints/peak_shaving_limit_sync_blueprint.yaml)
 
-- **Purpose:** synchronizes Omnibattery's **Capacity Protection Limit** with a monthly-peak sensor, for tariffs or demand-management setups where the allowed peak follows a measured monthly value.
-- **Requires:** the monthly-peak sensor and the **Capacity Protection Limit** number.
-- **Controls:** the **Capacity Protection Limit** number only.
+- **Purpose:** synchronizes Omnibattery's **Maximum grid import** with a monthly-peak sensor, for tariffs or demand-management setups where the allowed peak follows a measured monthly value.
+- **Requires:** the monthly-peak sensor and the **Maximum grid import** number, which you must pick.
+- **Controls:** the **Maximum grid import** number only.
 - **Compatible with:** a monthly-peak sensor reporting in either `kW` or `W`; the blueprint converts `kW` to watts automatically.
-- **Does not do:** write the number when its value already matches the measured peak.
+- **Does not do:** write the number when its value already matches, or write anything while the peak sensor has no value.
+
+Inputs: **Monthly Peak Sensor**, **Maximum Grid Import**, **Minimum peak** (default `2500 W`) and **Margin** (default `0 W`). It writes the larger of the minimum peak and the monthly peak, minus the margin, kept inside the number's range. The minimum exists because the meter's monthly peak restarts at 0 on the 1st and Flanders bills at least 2.5 kW; the margin is the watts kept below the monthly peak.
+
+This is version 2 of the blueprint: if you used the earlier one, re-import it and pick the **Maximum grid import** entity again.
 
 Checks on changes and every 15 seconds.
 
@@ -87,7 +103,7 @@ Checks on changes and every 15 seconds.
 
 Configure the SOC floor, a higher SOC recovery target, charge power, and idle target. It restores the idle target when SOC reaches the recovery target or capacity protection ends.
 
-The grid target is the total import, not the charge power: the battery charges with the target minus the house load, and does not charge while the house draws more than the target. Setting it to your Peak Limit charges whatever fits under the peak. System SOC counts only batteries under automatic control, so a battery in manual mode (for example balancing) does not hold it up.
+The grid target is the total import, not the charge power: the battery charges with the target minus the house load, and does not charge while the house draws more than the target. Setting it to your Maximum grid import charges whatever fits under it. System SOC counts only batteries under automatic control, so a battery in manual mode (for example balancing) does not hold it up.
 
 ## Forward persistent notifications to Telegram
 

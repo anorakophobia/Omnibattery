@@ -1,0 +1,678 @@
+"""Pure inputs of the chronological planner.
+
+Extracted from ``PricingManager._build_chronological_plan_for_horizon`` (S4):
+each function turns plain values into one input of
+``ChronologicalEvaluationRequest`` without touching the controller.
+"""
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
+from typing import Any, Sequence
+
+from ..const import FLOOR_HYSTERESIS_PCT
+from ..solar_forecast import solar_forecast_period_energy_between
+from .chronological import (
+    EnergyDeadline,
+    EnergyInterval,
+    build_energy_deadlines,
+    normalize_energy_shape,
+    simulate_allocations,
+)
+from .solar_timeline import SolarTimelineResult, build_solar_timeline
+
+
+def consumption_shape(
+    forecast: Any,
+    boundaries: Sequence[tuple[datetime, datetime]],
+    *,
+    horizon_end: datetime,
+    daily_horizon_end: datetime,
+    scalar_total_kwh: float | None,
+) -> list[float]:
+    """Consumption (kWh) of every planning interval, summing to the horizon total.
+
+    ``forecast`` exposes ``intervals_kwh``, ``intervals_by_date`` and
+    ``energy_kwh``; ``scalar_total_kwh`` is the controller's remaining-day balance.
+    """
+    consumption_raw: list[float] = []
+    intervals_by_date = getattr(forecast, "intervals_by_date", None) or {}
+    for start, end in boundaries:
+        index = start.hour * 4 + start.minute // 15
+        # The range API preserves its original one-day contract by
+        # aggregating matching wall-clock bins.  A cross-midnight
+        # dashboard horizon may contain the same bin on two dates,
+        # though, so use the retained date-specific shape whenever it
+        # is available.  This also leaves repeated DST bins as two
+        # physical intervals of their nominal daily value.
+        date_intervals = intervals_by_date.get(
+            start.date(), forecast.intervals_kwh
+        )
+        bucket = (
+            float(date_intervals[index])
+            if index < len(date_intervals)
+            else 0.0
+        )
+        fraction = max(
+            0.0,
+            (end.timestamp() - start.timestamp()) / 900.0,
+        )
+        consumption_raw.append(max(0.0, bucket * fraction))
+
+    # The normal planner receives a remaining-day balance from the
+    # controller.  An explicitly extended diagnostic horizon instead
+    # needs the profile's energy for the whole requested range;
+    # otherwise tomorrow's intervals would merely dilute today's
+    # remainder across the extra hours.
+    forecast_total = (
+        forecast.energy_kwh
+        if horizon_end > daily_horizon_end
+        else scalar_total_kwh
+    )
+    consumption_total = max(0.0, float(forecast_total or 0.0))
+    return normalize_energy_shape(consumption_raw, consumption_total)
+
+
+def _apply_excluded_demand_claim(
+    boundaries: list[tuple[datetime, datetime]],
+    intervals_kwh: list[float],
+    claim_kwh: float,
+    today_end: datetime,
+) -> tuple[list[float], float]:
+    """Reserve an excluded device's remaining demand from today's solar.
+
+    The reservation is spread over the intervals that start before
+    ``today_end``, proportional to their energy, and capped at what those
+    intervals hold. Intervals beyond it belong to tomorrow's forecast in a
+    cross-midnight projection: a sensor reporting demand remaining *today*
+    must never reduce them.
+
+    Returns the adjusted intervals and the claim actually applied.
+    """
+    claim = max(0.0, claim_kwh)
+    if claim <= 0.0:
+        return intervals_kwh, 0.0
+    today_indices = [
+        index
+        for index, (start, _end) in enumerate(boundaries)
+        if start < today_end and intervals_kwh[index] > 0.0
+    ]
+    available = sum(intervals_kwh[index] for index in today_indices)
+    if available <= 0.0:
+        return intervals_kwh, 0.0
+    claim = min(claim, available)
+    factor = (available - claim) / available
+    adjusted = list(intervals_kwh)
+    for index in today_indices:
+        adjusted[index] *= factor
+    return adjusted, claim
+
+
+def _margin_per_day(
+    boundaries: Sequence[tuple[datetime, datetime]],
+    timeline: SolarTimelineResult,
+    margin_kwh: float,
+    today_end: datetime,
+) -> SolarTimelineResult | None:
+    """``timeline`` (built without margin) less ``margin_kwh`` off each day.
+
+    Each local day gives up the margin, at most its own sun, spread over its
+    intervals in proportion to their energy: what a one-day horizon does.
+    None with sun on one day only, which the one-day build already covers.
+    """
+    # ponytail: days are 24 h steps from today_end; a DST night shifts the
+    # day boundary by an hour, where there is no sun.
+    days: dict[int, list[int]] = {}
+    for index, (start, _end) in enumerate(boundaries):
+        day = 0 if start < today_end else 1 + (start - today_end) // timedelta(days=1)
+        days.setdefault(day, []).append(index)
+    intervals = list(timeline.intervals_kwh)
+    sunny = sum(
+        1 for indices in days.values() if sum(intervals[i] for i in indices) > 1e-9
+    )
+    if sunny < 2:
+        return None
+    cut_total = 0.0
+    for indices in days.values():
+        total = sum(intervals[index] for index in indices)
+        cut = min(margin_kwh, total)
+        if cut > 0.0:
+            for index in indices:
+                intervals[index] *= (total - cut) / total
+        cut_total += cut
+    effective = max(0.0, timeline.remaining_raw_kwh - cut_total)
+    return replace(
+        timeline,
+        intervals_kwh=tuple(intervals),
+        safety_margin_kwh=cut_total,
+        remaining_effective_kwh=effective,
+        timeline_effective_kwh=max(0.0, timeline.timeline_effective_kwh - cut_total),
+        # As the one-day timeline reports a margin that leaves no sun.
+        fallback_reason=(
+            "zero_budget" if effective <= 1e-9 else timeline.fallback_reason
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class SolarTimeline:
+    """Solar curve of the plan: the selected timeline and the claim applied to it."""
+
+    timeline: SolarTimelineResult
+    intervals_kwh: list[float]
+    excluded_claim_kwh: float
+    source: str
+
+
+def solar_timeline(
+    boundaries: list[tuple[datetime, datetime]],
+    solar_input: Any,
+    learned_snapshot: Any,
+    *,
+    solar_start: datetime | None,
+    solar_end: datetime | None,
+    mode: str,
+    safety_margin_kwh: float,
+    extended_timezone: Any,
+    excluded_claim_kwh: float,
+    today_end: datetime,
+) -> SolarTimeline:
+    """Per-interval solar of the horizon, net of an excluded device's claim.
+
+    ``solar_input`` exposes ``remaining_kwh``, ``periods`` and
+    ``temporal_shape``; ``learned_snapshot`` (or ``None``) exposes ``shape`` and
+    ``mature``.  ``extended_timezone`` is the local timezone when the horizon
+    is extended past the control one, else ``None``.
+    """
+    provider_periods = solar_input.periods
+    temporal_shape = solar_input.temporal_shape
+    if extended_timezone is not None and provider_periods:
+        # A cross-midnight provider curve may contain a normal overnight
+        # gap. Map its dated periods directly onto the exact boundaries;
+        # the single-day daylight coverage validator cannot represent
+        # two separate solar windows safely.
+        temporal_shape = tuple(
+            solar_forecast_period_energy_between(
+                provider_periods,
+                start,
+                end,
+                timezone=extended_timezone,
+            )
+            for start, end in boundaries
+        )
+        provider_periods = None
+
+    def build(margin_kwh: float) -> SolarTimelineResult:
+        return build_solar_timeline(
+            boundaries,
+            solar_input.remaining_kwh,
+            safety_margin_kwh=margin_kwh,
+            provider_periods=provider_periods,
+            temporal_shape=temporal_shape,
+            learned_shape=(learned_snapshot.shape if learned_snapshot else None),
+            learned_mature=bool(learned_snapshot and learned_snapshot.mature),
+            solar_start=solar_start,
+            solar_end=solar_end,
+            mode=mode,
+        )
+
+    timeline = build(safety_margin_kwh)
+    # The margin is per forecast day: sun on more than one day gives up the
+    # margin off each day's own sun, not once off the total.
+    if safety_margin_kwh > 0.0 and any(start >= today_end for start, _end in boundaries):
+        per_day = _margin_per_day(boundaries, build(0.0), safety_margin_kwh, today_end)
+        if per_day is not None:
+            timeline = per_day
+    # Excluded devices reserve part of the remaining forecast (see
+    # _should_activate_grid_charging). The timeline must project the
+    # same solar the scalar balance used, otherwise it would place
+    # deadlines against sunshine another load is going to take. The
+    # reservation is taken out of today's intervals only, proportional
+    # to their energy: the sensor reports demand remaining *today*, and
+    # a cross-midnight projection also carries tomorrow's forecast,
+    # which the claim must never touch. Within today every interval
+    # gives up the same share of its own energy, because we do not know
+    # when the device will draw, which is uniformly conservative.
+    solar, claim = _apply_excluded_demand_claim(
+        boundaries,
+        list(timeline.intervals_kwh),
+        excluded_claim_kwh,
+        today_end,
+    )
+    return SolarTimeline(timeline, solar, claim, timeline.source)
+
+
+def energy_over(
+    boundaries: Sequence[tuple[datetime, datetime]],
+    values: Sequence[float],
+    start: datetime,
+    end: datetime,
+) -> float:
+    """Energy (kWh) of ``values`` between ``start`` and ``end``, weighted by overlap."""
+    total = 0.0
+    for (b_start, b_end), value in zip(boundaries, values):
+        overlap = (min(b_end, end) - max(b_start, start)).total_seconds()
+        if overlap > 0.0:
+            total += value * overlap / (b_end - b_start).total_seconds()
+    return total
+
+
+@dataclass(frozen=True)
+class EnergyProjection:
+    """Home consumption and solar over the planner's 15-minute boundaries.
+
+    Built from the planner's own pure inputs, without the battery-idle masks or
+    the discharge cap, so every consumer shares one solar and consumption view.
+    """
+
+    boundaries: tuple[tuple[datetime, datetime], ...]
+    consumption_kwh: tuple[float, ...]
+    solar_kwh: tuple[float, ...]
+    solar_source: str
+
+
+def battery_idle_intervals(
+    boundaries: Sequence[tuple[datetime, datetime]],
+    consumption: Sequence[float],
+    solar: Sequence[float],
+    *,
+    held_until: datetime | None,
+    limit_kw: float,
+    fleet_blocks: Sequence[Any],
+    block_matches: Callable[[Any, Any], bool],
+    blocked_price_slots: Sequence[Any] | None,
+    tz: Any,
+) -> list[EnergyInterval]:
+    """Planning intervals with the battery idled where nothing may discharge.
+
+    ``held_until`` (peak shaving conserving now) trims each earlier
+    interval's load to the part above ``limit_kw`` (the grid import cap,
+    which also leaves that part to the battery inside a no-discharge window
+    or a price block); ``fleet_blocks`` are the
+    fleet-wide no-discharge windows, matched with ``block_matches(interval,
+    block)``; ``blocked_price_slots`` are the price slots at or below the
+    discharge-control threshold (``None`` when that control is inactive) and
+    ``tz`` the timezone their naive wall time is compared in.
+    """
+    # Peak shaving that is conserving now holds the battery to the
+    # excess above its limit; the grid carries the rest of the load.
+    # Projecting a full overnight drain instead booked a phantom
+    # guaranteed-floor charge for a battery that never moved.
+    intervals = [
+        EnergyInterval(
+            start,
+            end,
+            max(
+                0.0,
+                consumption[index]
+                - limit_kw * (end - start).total_seconds() / 3600.0,
+            )
+            if held_until is not None and start < held_until
+            else consumption[index],
+            solar[index],
+        )
+        for index, (start, end) in enumerate(boundaries)
+    ]
+    def blocked(item: EnergyInterval) -> EnergyInterval:
+        # A no-discharge window idles the battery except for the load above
+        # the grid import cap, which the cap still makes it cover (#506).
+        hours = (item.end - item.start).total_seconds() / 3600.0
+        if limit_kw <= 0 or (held_until is not None and item.start < held_until):
+            # No cap; or the reserve hold already left only the excess.
+            return item if limit_kw > 0 else item.with_battery_idle()
+        return EnergyInterval(
+            item.start,
+            item.end,
+            max(0.0, item.consumption_kwh - item.solar_kwh - limit_kw * hours),
+            max(0.0, item.solar_kwh - item.consumption_kwh),
+        )
+
+    if fleet_blocks:
+        intervals = [
+            blocked(item)
+            if any(block_matches(item, block) for block in fleet_blocks)
+            else item
+            for item in intervals
+        ]
+    # Price-based discharge control idles the battery whenever the
+    # slot price is at or below its threshold (#594), so those
+    # intervals drain only the load above the cap.
+    if blocked_price_slots is not None:
+
+        def wall(value: datetime) -> datetime:
+            # Price slots are naive local wall time.
+            if value.tzinfo is None:
+                return value
+            return value.astimezone(tz).replace(tzinfo=None)
+
+        intervals = [
+            blocked(item)
+            if any(
+                wall(slot.start) <= wall(item.start) < wall(slot.end)
+                for slot in blocked_price_slots
+            )
+            else item
+            for item in intervals
+        ]
+    return intervals
+
+
+def time_slot_window_hold(
+    intervals: Sequence[EnergyInterval],
+    windows: Sequence[Any],
+) -> tuple[list[EnergyInterval], float | None]:
+    """Idle the battery inside the Time Slot ``windows`` (each with ``start``/``end``).
+
+    Returns the intervals and the load the grid carries inside the windows;
+    that load is ``None`` when there are no windows, and the intervals pass
+    through untouched.
+    """
+    if not windows:
+        return intervals, None
+    window_load_on_grid = 0.0
+    held = []
+    for item in intervals:
+        if any(w.start <= item.start < w.end for w in windows):
+            window_load_on_grid += max(
+                0.0, item.consumption_kwh - item.solar_kwh
+            )
+            item = item.with_battery_idle()
+        held.append(item)
+    return held, window_load_on_grid
+
+
+def time_slot_window_keeps(
+    intervals: Sequence[EnergyInterval],
+    allocations: Sequence[Any],
+    windows: Sequence[Any],
+    *,
+    usable_kwh: float,
+    capacity_kwh: float,
+    now: datetime,
+    horizon_of: Callable[[datetime], datetime],
+    active_keep_kwh: float | None,
+) -> tuple[tuple[datetime, datetime, float | None], ...]:
+    """Usable energy each Time Slot window keeps, for the panel's projection.
+
+    The control's rule (``_apply_time_slot_chronological_plan``) as
+    ``(start, end, kwh)``; ``None`` keeps everything. A window that charges
+    holds whole. One that does not keeps what the plan drains from its start
+    down to its lowest point, within the horizon the control will plan when
+    the window opens (``horizon_of``). The window open now keeps the control's
+    live floor (``active_keep_kwh``). ``intervals`` are the plan's own: the
+    margined sun and the battery idle inside the windows. A window whose
+    horizon the plan does not reach holds whole: its lowest point is unknown,
+    and a shorter look would draw a discharge the control will not allow.
+    """
+    if not windows:
+        return ()
+    capacity = max(0.0, float(capacity_kwh))
+    start_energy = min(max(0.0, float(usable_kwh)), capacity)
+    trajectory = simulate_allocations(
+        intervals, start_energy, allocations, usable_capacity_kwh=capacity
+    ).trajectory
+    plan_end = trajectory[-1][0] if trajectory else now
+    keeps: list[tuple[datetime, datetime, float | None]] = []
+    for window in windows:
+        horizon = horizon_of(window.start)
+        if window.start <= now < window.end:
+            # ponytail: no live floor yet (before the window's first
+            # evaluation) draws it held; the control holds nothing until then.
+            keep = active_keep_kwh
+        elif plan_end < horizon or any(
+            a.planned_battery_kwh > 1e-6
+            and a.slot.start < window.end
+            and a.slot.end > window.start
+            for a in allocations
+        ):
+            keep = None
+        else:
+            entry = next(
+                (e for end, e in reversed(trajectory) if end <= window.start),
+                start_energy,
+            )
+            low = min(
+                [entry]
+                + [e for end, e in trajectory if window.start < end <= horizon]
+            )
+            keep = max(0.0, entry - max(0.0, low))
+        keeps.append((window.start, window.end, keep))
+    return tuple(keeps)
+
+
+@dataclass(frozen=True)
+class FleetPlanState:
+    """Fleet energy figures the plan is sized with."""
+
+    total_capacity_kwh: float
+    weighted_min_soc: float
+    usable_kwh: float
+    room_kwh: tuple[float, ...]
+    headroom_kwh: float
+
+
+def fleet_plan_state(
+    batteries: Sequence[tuple[float, float, float, float]],
+) -> FleetPlanState:
+    """Capacity, usable energy and room below the ceiling of the fleet.
+
+    Each battery is ``(capacity_kwh, soc, floor_soc, ceiling_soc)``, SOCs in
+    percent; ``room_kwh`` keeps the order of ``batteries``.
+    """
+    total_capacity = sum(cap for cap, _soc, _floor, _ceiling in batteries)
+    weighted_min_soc = (
+        sum(floor * cap for cap, _soc, floor, _ceiling in batteries)
+        / total_capacity
+        if total_capacity > 0
+        else 0.0
+    )
+    usable = sum(
+        max(0.0, (soc - floor) / 100.0 * cap)
+        for cap, soc, floor, _ceiling in batteries
+    )
+    room_kwh = tuple(
+        max(0.0, (ceiling - soc) / 100.0 * cap)
+        for cap, soc, _floor, ceiling in batteries
+    )
+    return FleetPlanState(
+        total_capacity, weighted_min_soc, usable, room_kwh, sum(room_kwh)
+    )
+
+
+def weekly_reserve(
+    intervals: Sequence[EnergyInterval],
+    *,
+    usable: float,
+    headroom: float,
+    now: datetime,
+    weekly_from_now: bool,
+    weekly_window_end: datetime | None,
+    solar_end: datetime | None,
+) -> dict[str, Any]:
+    """``weekly_reserve_*`` decision values of a pending weekly full charge.
+
+    ``weekly_from_now`` books the run from ``now`` up to ``weekly_window_end``;
+    otherwise it starts when the target day's sun is over (``solar_end``).
+    """
+    # An unreliable solar forecast is why this reservation exists;
+    # crediting it would reproduce #489.  Over-reserving is safe because
+    # the pre-slot re-evaluation cancels or resizes against the real SOC.
+    # After the target day's sun the gap is bought from now on, up
+    # to the sunrise ending the run.
+    drained_until = weekly_window_end if weekly_from_now else solar_end
+    projected_usable = min(
+        usable + headroom,
+        max(
+            0.0,
+            usable
+            - sum(
+                item.consumption_kwh
+                for item in intervals
+                if drained_until is not None and item.end <= drained_until
+            ),
+        ),
+    )
+    values: dict[str, Any] = {
+        "weekly_reserve_not_before": (
+            now if weekly_from_now else solar_end
+        ).isoformat()
+    }
+    if weekly_window_end is not None:
+        values["weekly_reserve_not_after"] = weekly_window_end.isoformat()
+    values["weekly_reserve_kwh"] = max(
+        0.0, usable + headroom - projected_usable
+    )
+    return values
+
+
+@dataclass(frozen=True)
+class GuaranteedFloor:
+    """Plan inputs and decision values once the guaranteed floor is required."""
+
+    deadlines: list[EnergyDeadline]
+    premium_kwh: float
+    required: float
+    energy_deficit_kwh: float
+    planned_grid_charge_kwh: float
+    guaranteed_floor_deadline: str
+
+
+def guaranteed_floor(
+    intervals: Sequence[EnergyInterval],
+    deadlines: list[EnergyDeadline],
+    *,
+    usable: float,
+    headroom: float,
+    required: float,
+    premium_kwh: float,
+    floor: float,
+    batteries: Sequence[tuple[float, float, float]],
+    solar_start: datetime,
+    energy_deficit_kwh: float,
+) -> GuaranteedFloor | None:
+    """Deadlines that keep every battery at the guaranteed ``floor`` until sunrise.
+
+    ``deadlines`` are the ordinary ones; each battery is ``(capacity_kwh, soc,
+    floor_soc)``, SOCs in percent. Returns ``None`` when the floor needs
+    nothing beyond the ordinary plan.
+    """
+    reserve = sum(
+        max(0.0, floor - floor_soc) / 100.0 * cap
+        for cap, _soc, floor_soc in batteries
+    )
+    pre_solar = [item for item in intervals if item.end <= solar_start]
+    # Already sitting under the floor is a requirement by itself.
+    # ``build_energy_deadlines`` only reports the projected drain
+    # and the clamp below hides that gap, so a battery that is held
+    # (peak shaving, no-discharge window) and never drains produced
+    # no floor deadline at all; its deficit then bound itself to
+    # tomorrow's depletion, past the projected solar fill, which no
+    # configured window can serve ("no energy quota").
+    gap = max(0.0, reserve - usable)
+    floor_deadlines = [
+        EnergyDeadline(
+            item.deadline,
+            item.required_cumulative_kwh + gap,
+            item.kind,
+            item.projected_soc_pct,
+        )
+        for item in build_energy_deadlines(
+            pre_solar,
+            max(0.0, usable - reserve),
+            kind="guaranteed_floor",
+        )
+    ]
+    floor_required = max(
+        (item.required_cumulative_kwh for item in floor_deadlines),
+        default=gap,
+    )
+    if gap > 0.0:
+        floor_deadlines.append(
+            EnergyDeadline(solar_start, floor_required, "guaranteed_floor")
+        )
+    hysteresis_kwh = (
+        sum(cap for cap, _soc, _floor_soc in batteries)
+        * FLOOR_HYSTERESIS_PCT
+        / 100.0
+    )
+    # The reactive trigger bands *each* battery; re-checking the
+    # band against the fleet total instead silently dropped a
+    # deficit the controller had already committed to.
+    under_band = any(
+        soc < floor - FLOOR_HYSTERESIS_PCT for _cap, soc, _floor_soc in batteries
+    )
+    if not (floor_required > hysteresis_kwh or (under_band and gap > 0.0)):
+        return None
+    # The floor requirement dominates ordinary depletion until
+    # sunrise. Preserve later, larger ordinary requirements.
+    combined: list[EnergyDeadline] = []
+    maximum = 0.0
+    for item in sorted(
+        deadlines + floor_deadlines,
+        key=lambda value: value.deadline,
+    ):
+        if item.required_cumulative_kwh > maximum + 1e-9:
+            combined.append(item)
+            maximum = item.required_cumulative_kwh
+    premium_kwh = max(
+        premium_kwh,
+        floor_required
+        - max(
+            (
+                item.required_cumulative_kwh
+                for item in deadlines
+                if item.deadline <= solar_start
+            ),
+            default=0.0,
+        ),
+    )
+    required = max(required, floor_required)
+    return GuaranteedFloor(
+        deadlines=combined,
+        premium_kwh=premium_kwh,
+        required=required,
+        energy_deficit_kwh=max(energy_deficit_kwh, floor_required),
+        planned_grid_charge_kwh=min(required, headroom),
+        guaranteed_floor_deadline=solar_start.isoformat(),
+    )
+
+
+def weekly_charge_curve(tails) -> tuple[tuple[float, float], ...]:
+    """The fleet's charge curve on the way to 100 %: ((kWh below 100 %, kW
+    from there up), ...), from ``(gap kWh, taper kWh, power W, taper W)`` per
+    battery still short of it.
+
+    The controller splits a slot's charge by what each battery charges in
+    time, so every battery charges at its own power until its taper (its last
+    WEEKLY_CHARGE_TAIL_PCT), then at the taper's power, and stops when full:
+    two batteries at 50 % and 90 % charge at their summed power only until
+    the fuller one tapers. Started together, the fleet's power is a step
+    function of the energy still missing (the charge efficiency scales energy
+    and time alike and cancels).
+    """
+    batteries = [(gap, tail, power / 1000.0, taper / 1000.0)
+                 for gap, tail, power, taper in tails if gap > 0 and power > 0 and taper > 0]
+
+    def phases(gap, tail, power, taper):
+        return (gap - tail) / power, (gap - tail) / power + tail / taper
+
+    def stored(time, gap, tail, power, taper):
+        bulk_end, _full = phases(gap, tail, power, taper)
+        return min(power * time, gap - tail) + min(max(0.0, time - bulk_end) * taper, tail)
+
+    def power_at(time):
+        total = 0.0
+        for battery in batteries:
+            bulk_end, full = phases(*battery)
+            gap, tail, power, taper = battery
+            total += power if time < bulk_end else taper if time < full else 0.0
+        return total
+
+    total_gap = sum(b[0] for b in batteries)
+    curve = []
+    for time in sorted({t for b in batteries for t in phases(*b)}):
+        missing = total_gap - sum(stored(time, *b) for b in batteries)
+        if missing > 1e-9:
+            curve.append((missing, power_at(time + 1e-9)))
+    return tuple(curve)

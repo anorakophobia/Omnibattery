@@ -160,7 +160,7 @@ def test_sessy_device_info_exposes_local_ui_and_firmware():
         device_key="sessy.local_80",
         name="Garage Sessy",
         brand="sessy",
-        driver=SimpleNamespace(model_label="Sessy"),
+        driver=SessyLocalDriver("sessy.local"),
         host="sessy.local",
         port=80,
         data={"software_version": "1.9.2"},
@@ -283,13 +283,17 @@ def test_coordinator_clamps_legacy_sessy_power_limits_before_allocation(monkeypa
 
     coordinator = MarstekVenusDataUpdateCoordinator(
         MagicMock(),
-        "Garage Sessy",
-        "sessy.local",
-        80,
+        {
+            "name": "Garage Sessy",
+            "host": "sessy.local",
+            "port": 80,
+            "brand": "sessy",
+            "max_charge_power": 5000,
+            "max_discharge_power": 5000,
+            "max_soc": 100,
+            "min_soc": 12,
+        },
         "sensor.grid_power",
-        brand="sessy",
-        max_charge_power=5000,
-        max_discharge_power=5000,
     )
 
     assert coordinator.max_charge_power == 2200
@@ -431,6 +435,7 @@ async def test_reconfigure_routes_sessy_to_its_http_form(monkeypatch):
         },
     )
     flow = MarstekVenusConfigFlow()
+    flow.context = {"source": "reconfigure"}
     flow.battery_index = 0
     flow._reconfigure_batteries = []
     flow._get_reconfigure_entry = lambda: entry

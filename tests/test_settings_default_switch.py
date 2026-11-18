@@ -16,7 +16,7 @@ from custom_components.omnibattery.const import (
     CONFIG_NUMBER_DEFINITIONS,
     CONF_PREDICTIVE_SAFETY_MARGIN_KWH,
 )
-from custom_components.omnibattery.number import MarstekConfigNumberEntity
+from custom_components.omnibattery.number import ConfigNumberEntity
 from custom_components.omnibattery.switch import ConfigNumberDefaultSwitch
 
 DOMAIN = "omnibattery"
@@ -50,7 +50,7 @@ def _setup(data):
     )
     switch = ConfigNumberDefaultSwitch(hass, entry, controller, MARGIN_DEF)
     switch.async_write_ha_state = lambda: None
-    slider = MarstekConfigNumberEntity(hass, entry, MARGIN_DEF)
+    slider = ConfigNumberEntity(hass, entry, MARGIN_DEF)
     return hass, entry, controller, switch, slider
 
 
@@ -102,7 +102,7 @@ async def test_turning_it_off_fixes_the_value_in_use():
 
 def test_a_setting_without_the_flag_has_no_attribute():
     other = next(d for d in CONFIG_NUMBER_DEFINITIONS if not d.get("default_switch"))
-    slider = MarstekConfigNumberEntity(None, SimpleNamespace(data={}, entry_id="e"), other)
+    slider = ConfigNumberEntity(None, SimpleNamespace(data={}, entry_id="e"), other)
 
     assert slider.extra_state_attributes is None
 

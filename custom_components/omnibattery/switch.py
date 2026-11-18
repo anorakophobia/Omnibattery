@@ -19,6 +19,7 @@ from .const import (
     CONF_ROUND_TRIP_EFFICIENCY,
     DOMAIN,
     CONF_CAPACITY_PROTECTION_ENABLED,
+    CONF_GRID_IMPORT_WINDOW_15MIN,
     CONF_CAPACITY_PROTECTION_EXCLUDED_DEVICES,
     CONF_DELAY_SOC_SETPOINT_ENABLED,
     CONF_ENABLE_CHARGE_DELAY,
@@ -59,6 +60,7 @@ from .const import (
     CONF_THREE_PHASE_ENABLED,
     NOTIFICATION_ID_PREFIX,
 )
+from .drivers.base import KEY_RS485_CONTROL_MODE
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
 from .infra.entity_naming import (
     english_entity_id,
@@ -90,9 +92,8 @@ async def async_setup_entry(
             entities.append(BatteryAllowDischargeSwitch(hass, entry, controller, coordinator))
             entities.append(BatteryManualModeSwitch(hass, entry, controller, coordinator))
             # Marstek-only cell maintenance: voltage taper needs per-cell
-            # voltages the other brands do not expose in the same way. Same
-            # brand list as the taper option in the config flow.
-            if coordinator.brand not in ("zendure", "anker", "sessy", "hoymiles", "huawei", "indevolt"):
+            # voltages the other brands do not expose in the same way.
+            if coordinator.traits.supports_voltage_taper:
                 entities.append(BatteryFullChargeVoltageTaperSwitch(hass, entry, controller, coordinator))
 
     # Add manual mode switch (system-level, always present)
@@ -162,6 +163,11 @@ async def async_setup_entry(
     if controller and CONF_CAPACITY_PROTECTION_ENABLED in entry.data:
         entities.append(CapacityProtectionSwitch(hass, entry, controller))
         entities.append(CapacityProtectionExcludedDevicesSwitch(hass, entry, controller))
+
+    # The grid import cap is always on (#506), so its 15-min window switch is
+    # not presence-gated; an absent key means the country default.
+    if controller:
+        entities.append(GridImportWindowSwitch(hass, entry, controller))
 
     # Add charge delay switch (system-level, when charge delay is configured)
     has_charge_delay_config = (
@@ -268,7 +274,7 @@ class MarstekVenusSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs) -> None:
         """Turn the switch on."""
-        if self.definition["key"] == "rs485_control_mode":
+        if self.definition["key"] == KEY_RS485_CONTROL_MODE:
             was_off = self.is_on is False
             self.coordinator.set_rs485_user_disabled(False)
 
@@ -306,7 +312,7 @@ class MarstekVenusSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn the switch off."""
-        if self.definition["key"] == "rs485_control_mode":
+        if self.definition["key"] == KEY_RS485_CONTROL_MODE:
             self.coordinator.set_rs485_user_disabled(True)
 
             success = await self.coordinator.set_rs485_control(False)
@@ -901,9 +907,9 @@ class CapacityProtectionSwitch(SwitchEntity):
         new_data = dict(self.entry.data)
         new_data[CONF_CAPACITY_PROTECTION_ENABLED] = True
         self.hass.config_entries.async_update_entry(self.entry, data=new_data)
-        _LOGGER.info("Capacity Protection ENABLED (SOC threshold: %d%%, peak limit: %dW)",
+        _LOGGER.info("Capacity Protection ENABLED (SOC threshold: %d%%, grid import cap: %dW)",
                      self.controller.capacity_protection_soc_threshold,
-                     self.controller.capacity_protection_limit)
+                     self.controller.max_contracted_power)
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs) -> None:
@@ -924,6 +930,43 @@ class CapacityProtectionSwitch(SwitchEntity):
             "manufacturer": "Omnibattery",
             "model": "Multi-Battery System",
         }
+
+
+class GridImportWindowSwitch(SwitchEntity):
+    """15-min billing window for the grid import cap (#506).
+
+    On: the cap limits the mean import of each local quarter (capacity
+    tariffs, Belgium). Off: it limits every instant (a breaker, Spain).
+    """
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, controller) -> None:
+        self.hass = hass
+        self.entry = entry
+        self.controller = controller
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "grid_import_window_15min"
+        self._attr_unique_id = f"{SYSTEM_UNIQUE_ID_PREFIX}grid_import_window_15min"
+        self.entity_id = system_entity_id("switch", "grid_import_window_15min")
+        self._attr_icon = "mdi:timer-sand"
+        self._attr_should_poll = False
+
+    @property
+    def is_on(self) -> bool:
+        return bool(getattr(self.controller, "grid_import_window_enabled", False))
+
+    async def _set(self, enabled: bool) -> None:
+        self.controller.grid_import_window_enabled = enabled
+        new_data = dict(self.entry.data)
+        new_data[CONF_GRID_IMPORT_WINDOW_15MIN] = enabled
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        _LOGGER.info("Grid import cap 15-min window %s", "ENABLED" if enabled else "DISABLED")
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self._set(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self._set(False)
 
 
 class CapacityProtectionExcludedDevicesSwitch(SwitchEntity):
@@ -1631,9 +1674,9 @@ class ManualModeSwitch(SwitchEntity):
                     "All batteries have been set to idle (0W). "
                     "You can now manually control each battery using the "
                     "'Set Forcible Charge/Discharge Power' controls, or — "
-                    "for Anker — select another operating mode in the "
-                    "official Anker Solix integration without OmniBattery "
-                    "reverting it.\n\n"
+                    "for batteries whose own integration offers more "
+                    "operating modes — select another mode there without "
+                    "OmniBattery reverting it.\n\n"
                     "Turn off Manual Mode to resume automatic control."
                 ),
                 "notification_id": f"{NOTIFICATION_ID_PREFIX}manual_mode_active",

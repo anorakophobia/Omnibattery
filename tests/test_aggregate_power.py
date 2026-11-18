@@ -15,7 +15,7 @@ from custom_components.omnibattery.sensors.aggregate_sensors import (
 from custom_components.omnibattery.tracking.consumption_tracker import (
     HOME_CONSUMPTION_HOLD_S,
 )
-from tests.conftest import FakeCoordinator
+from tests.conftest import FakeCoordinator, _FakeMarstekDriver
 
 
 def _sensor(coordinators, key):
@@ -223,7 +223,7 @@ def test_home_consumption_accepts_positive_balance_below_previous_half():
 def test_cell_power_grid_plus_solar_charge():
     # vA charging 200 W from the grid (ac_power -200) while 800 W of PV feeds the
     # cells via MPPT → cell charge = -(-200) + 800 = 1000 W.
-    va = FakeCoordinator(data={"ac_power": -200, "mppt1_power": 800})
+    va = FakeCoordinator(data={"ac_power": -200, "mppt1_power": 800}, battery_version="vA")
     sensor = _sensor([va], "system_battery_cell_power")
     assert sensor._calculate_battery_cell_power() == 1000
 
@@ -233,6 +233,7 @@ def test_cell_power_max_ac_does_not_add_derived_solar_power():
     # the cells. The aggregate must use only the AC battery flow for this model.
     max_ac = SimpleNamespace(
         is_available=True,
+        driver=_FakeMarstekDriver(),
         data={"ac_power": -200, "solar_power": 800},
         capabilities=SimpleNamespace(has_mppt_pv=False, has_solar_telemetry=False),
     )
@@ -247,6 +248,7 @@ def test_cell_power_anker_sb4_does_not_double_count_pv_issue_738():
     # not pack + PV = 4650 W.
     sb4 = SimpleNamespace(
         is_available=True,
+        driver=_FakeMarstekDriver(),
         data={"ac_power": -2110, "battery_power": 2110, "solar_power": 2540},
         capabilities=SimpleNamespace(has_mppt_pv=False, has_solar_telemetry=True),
     )
@@ -258,6 +260,7 @@ def test_cell_power_anker_sb4_does_not_double_count_pv_issue_738():
 def test_cell_power_uses_ac_power_when_venus_mppt_inputs_are_unused():
     venus_d = SimpleNamespace(
         is_available=True,
+        driver=_FakeMarstekDriver(),
         data={
             "ac_power": -783,
             "battery_power": 712,
@@ -266,7 +269,10 @@ def test_cell_power_uses_ac_power_when_venus_mppt_inputs_are_unused():
             "mppt3_power": 0,
             "mppt4_power": 0,
         },
-        capabilities=SimpleNamespace(has_mppt_pv=True, has_solar_telemetry=False),
+        capabilities=SimpleNamespace(
+            has_mppt_pv=True,
+            mppt_power_keys=("mppt1_power", "mppt2_power", "mppt3_power", "mppt4_power"),
+            has_solar_telemetry=False),
         dc_pv_connected=False,
     )
     sensor = _sensor([venus_d], "system_battery_cell_power")
@@ -277,7 +283,7 @@ def test_cell_power_uses_ac_power_when_venus_mppt_inputs_are_unused():
 def test_cell_power_solar_bypass_net_discharge():
     # PV bypassing out the AC port (ac_power +500 discharge) with 300 W on MPPT →
     # net cell power = -500 + 300 = -200 W (still discharging the cells).
-    va = FakeCoordinator(data={"ac_power": 500, "mppt1_power": 300})
+    va = FakeCoordinator(data={"ac_power": 500, "mppt1_power": 300}, battery_version="vA")
     sensor = _sensor([va], "system_battery_cell_power")
     assert sensor._calculate_battery_cell_power() == -200
 
@@ -291,7 +297,7 @@ def test_cell_power_solar_supplies_ac_and_charges_battery_issue_93():
         "mppt2_power": 402,
         "mppt3_power": 139,
         "mppt4_power": 0,
-    })
+    }, battery_version="vA")
     sensor = _sensor([va], "system_battery_cell_power")
     assert sensor._calculate_battery_cell_power() == 681
 
@@ -301,7 +307,7 @@ def test_cell_power_includes_ac_offgrid_in_backup_mode():
     va = FakeCoordinator(data={
         "ac_power": -100, "ac_offgrid_power": 50, "inverter_state": 4,
         "mppt1_power": 100, "mppt2_power": 100, "mppt3_power": 100, "mppt4_power": 100,
-    })
+    }, battery_version="vA")
     sensor = _sensor([va], "system_battery_cell_power")
     # -(-100) - 50 + 400 = 450
     assert sensor._calculate_battery_cell_power() == 450
@@ -326,8 +332,8 @@ def test_cell_power_falls_back_to_battery_power():
 
 
 def test_cell_power_sums_across_batteries():
-    a = FakeCoordinator(data={"ac_power": -200, "mppt1_power": 800})  # +1000
-    b = FakeCoordinator(data={"ac_power": 500, "mppt1_power": 300})   # -200
+    a = FakeCoordinator(data={"ac_power": -200, "mppt1_power": 800}, battery_version="vA")  # +1000
+    b = FakeCoordinator(data={"ac_power": 500, "mppt1_power": 300}, battery_version="vA")   # -200
     sensor = _sensor([a, b], "system_battery_cell_power")
     assert sensor._calculate_battery_cell_power() == 800
 

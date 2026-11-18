@@ -1,0 +1,11 @@
+# Brand-branch allowlist (tests/test_no_brand_branches.py). One line per
+# occurrence, format path:symbol:kind:detail. It may only SHRINK: delete lines
+# as the refactor removes the code that produces them. Regenerate with
+# OMNIBATTERY_UPDATE_ALLOWLIST=1 and check that the diff only deletes.
+# PERMANENT exceptions (do not delete). D5: panel fuera del refactor (deuda en la guia de drivers).
+frontend/marstek-panel.js:<js>:js:venus
+frontend/marstek-panel.js:<js>:js:venus
+frontend/marstek-panel.js:<js>:js:venus
+frontend/marstek-panel.js:<js>:js:venus
+frontend/marstek-panel.js:<js>:js:venus
+frontend/marstek-panel.js:<js>:js:venus

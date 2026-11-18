@@ -39,6 +39,19 @@ def test_dual_plane_without_its_sensor_ignores_the_lifetime_counters():
     assert measured_battery_efficiency(battery) is None
 
 
+def test_battery_side_counters_do_not_feed_the_arbitrage():
+    """#706: Anker's counters are DC to DC (cell efficiency), not the AC round trip."""
+    battery = lifetime(1000, 930)
+    battery.capabilities = SimpleNamespace(
+        has_mppt_pv=False, has_solar_telemetry=False, lifetime_counters_ac=False
+    )
+    assert measured_battery_efficiency(battery) is None
+    battery.capabilities = SimpleNamespace(
+        has_mppt_pv=False, has_solar_telemetry=False, lifetime_counters_ac=True
+    )
+    assert measured_battery_efficiency(battery) == pytest.approx(0.93)
+
+
 def ctrl(coordinators, configured=None):
     return SimpleNamespace(round_trip_efficiency=configured, coordinators=coordinators)
 
@@ -82,5 +95,5 @@ def test_consumers_use_it():
     assert "effective_round_trip_efficiency" in inspect.getsource(high_price_discharge)
     src = inspect.getsource(engine)
     assert "controller.round_trip_efficiency" not in src
-    # The fourth is the weekly refill hold.
-    assert src.count("effective_round_trip_efficiency(self._controller)") == 4
+    # The third is the weekly refill hold.
+    assert src.count("effective_round_trip_efficiency(self._controller)") == 3

@@ -28,6 +28,7 @@ from custom_components.omnibattery.pricing import (
 )
 from custom_components.omnibattery.pricing import engine as engine_module
 from custom_components.omnibattery.pricing.engine import PricingManager
+from tests.conftest import _FakeMarstekDriver
 
 _DAY = datetime(2026, 9, 26)
 _MIDNIGHT = _DAY + timedelta(days=1)
@@ -43,13 +44,16 @@ def clock(monkeypatch):
             return cls.value
 
     monkeypatch.setattr(engine_module, "datetime", _Clock)
+    monkeypatch.setattr(engine_module, "local_now", _Clock.now)
     monkeypatch.setattr(omnibattery_module, "datetime", _Clock)
+    monkeypatch.setattr(omnibattery_module, "local_now", _Clock.now)
     return _Clock
 
 
 class _Battery:
     def __init__(self, soc: float, capacity_kwh: float = 10.0, max_soc: float = 95.0):
         self.name = "b1"
+        self.driver = _FakeMarstekDriver()
         self.max_soc = max_soc
         self.is_available = True
         self.data = {"battery_soc": soc, "battery_total_energy": capacity_kwh}

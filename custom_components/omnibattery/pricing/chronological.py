@@ -105,6 +105,10 @@ class SlotAllocation:
     planned_battery_kwh: float
     deadline: datetime | None
     kind: str
+    # 2.0.0 optimizer: the slot charges until it ends. ``planned_battery_kwh``
+    # stays what the plan expects to store; the controller asks one SOC step
+    # more so the whole-percent target is not reached early (design §2.5).
+    to_slot_end: bool = False
 
 
 @dataclass(frozen=True)
@@ -138,6 +142,21 @@ class ChronologicalPlan:
     # Cheapest slot the price limits rejected, as (start, price, ceiling), so a
     # ``price_threshold`` plan shows by how much it missed.
     cheapest_rejected: tuple[datetime, float, float | None] | None = None
+    # 2.0.0 optimizer only: the usable energy it projects at the end of each
+    # interval (its own battery model, discharge losses included), and the
+    # efficiency its slot energies are sized with.
+    trajectory: tuple[tuple[datetime, float], ...] = ()
+    charge_efficiency: float | None = None
+    # Slots in which the plan holds the battery (Discharge Reserve, step 5).
+    holds: tuple[PriceSlot, ...] = ()
+    # Slots whose solar surplus the plan exports instead of storing (step 6).
+    exports: tuple[PriceSlot, ...] = ()
+    # (slot, net export kW) the plan sells at (step 7).
+    sales: tuple[tuple[PriceSlot, float], ...] = ()
+    # (slot, net export kW, usable kWh it stops at) the plan makes room at,
+    # and the slots with a risk quarter (Smart Pre-Discharge).
+    room_sales: tuple[tuple[PriceSlot, float, float], ...] = ()
+    risk_slots: tuple[PriceSlot, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -192,6 +211,80 @@ class ChronologicalEvaluationRequest:
     # charges. The house load comes out of it, so a slot stores at most
     # ``min(power, ceiling - net load)``. None keeps the flat ``power``.
     grid_ceiling_kw: float | None = None
+    # Inputs of the 2.0.0 optimizer (pricing/optimizer.py); the allocator
+    # above ignores them. The fleet's SOC reading and capacity place the
+    # whole-percent steps a slot target rounds to.
+    fleet_capacity_kwh: float | None = None
+    fleet_soc_pct: float | None = None
+    soc_resolution_pct: float = 1.0
+    discharge_kw: float | None = None
+    # Export price per slot start; a slot missing from it exports at 0.
+    export_prices: Mapping[datetime, float] | None = None
+    # D3: with negative-price charging off, a negative price counts as 0 for
+    # the energy the battery buys (the house still sees the real price).
+    negative_price_charging: bool = True
+    # Guaranteed Minimum SOC while it is active: stored kWh above the
+    # discharge floor at the floor SOC. Every booked slot charges at least to
+    # it (the controller raises the slot targets), and the plan keeps the
+    # battery at it until ``floor_until`` (the first sun), as close as it can.
+    floor_kwh: float = 0.0
+    floor_until: datetime | None = None
+    # The whole price feed through the horizon when ``price_slots`` is only the
+    # charge candidates (Smart Pre-Discharge leaves out its risk window): the
+    # optimizer prices every interval with it and charges only in candidates.
+    price_curve: tuple[PriceSlot, ...] | None = None
+    # Discharge Reserve on (step 5): a slot may hold the battery (it covers
+    # nothing, solar surplus still stores) when a dearer hour needs the energy;
+    # ``hold_min_saving`` per kWh left to the grid must be saved by holding.
+    hold_allowed: bool = False
+    hold_min_saving: float = 0.0
+    # Surplus price hold on (step 6): a slot may export its solar surplus
+    # instead of storing it; ``export_choice_min_saving`` per kWh exported.
+    export_choice_allowed: bool = False
+    export_choice_min_saving: float = 0.0
+    # High-Price Sale "surplus + arbitrage" on (step 7): a slot may sell at a
+    # net grid export of up to ``sell_power_kw``, battery energy priced at
+    # ``battery_export_prices`` (no solar-only bonus); the arbitrage margin per
+    # kWh sold decides.
+    sell_allowed: bool = False
+    sell_power_kw: float = 0.0
+    battery_export_prices: Mapping[datetime, float] | None = None
+    # Solar Charge Delay on (step 8, D9): None = off. A slot may export its
+    # solar surplus (valued at the export price, 0 without one) as long as the
+    # sun left before each day's sun end minus this margin refills the battery
+    # and it is at the setpoint (% of the fleet, None = no setpoint); at equal
+    # cost the sun is stored as late as possible.
+    solar_delay_margin_h: float | None = None
+    solar_delay_setpoint_pct: float | None = None
+    # The module's daily balance gate: no delay when stored energy + the sun
+    # left today falls short of the house left today minus this deadband.
+    solar_delay_deadband_kwh: float = 0.5
+    # A day closed by an earlier plan (its balance needed the grid): no delay
+    # export before this time (the next midnight), as the module's daily latch.
+    solar_delay_closed_until: datetime | None = None
+    # Smart Pre-Discharge on: the Negative Injection Threshold (None = off).
+    # A quarter whose sun exceeds the house and whose export price (read from
+    # ``export_prices``; a slot missing from it is no risk) is at or below it
+    # is a risk (``optimizer.risk_quarters``). Before a risk a slot may "make
+    # room": the grid at -``room_power_kw`` (0 = self-consumption, no option)
+    # down to the room it needs, never under ``room_floor_kwh`` (stored kWh at
+    # the Pre-discharge Reserve SOC), battery energy priced at
+    # ``room_export_prices`` (a slot missing from it: no option there).
+    room_threshold: float | None = None
+    room_power_kw: float = 0.0
+    room_floor_kwh: float = 0.0
+    room_export_prices: Mapping[datetime, float] | None = None
+    # Weekly Full Charge pending (step 4): the fleet must touch its top
+    # (``usable_initial_kwh + headroom_kwh``, 100 %) once by ``full_by``, the
+    # window's end; None = no weekly charge. ``full_by_power_kw`` is the
+    # fleet's power while every battery charges; ``charge_curve``, ((kWh below
+    # the top, AC kW), ...), the power from there up (a battery in its 100 %
+    # taper, or full while the others go on), grid and sun alike.
+    full_by: datetime | None = None
+    # The headroom to the configured max_soc: the ceiling once the run is done.
+    done_headroom_kwh: float | None = None
+    charge_curve: tuple[tuple[float, float], ...] = ()
+    full_by_power_kw: float | None = None
 
     def __post_init__(self) -> None:
         if self.horizon_end <= self.now:
@@ -625,7 +718,8 @@ def allocate_price_slots(
     to the grid is used in that hour, not in a later one. A slot that ends
     before the last hour left to the grid ahead of a valued deadline also
     stores what those hours drain, and serves the deadline only when the
-    deadlines it then reaches repay that drain (#834). No drain is counted
+    deadlines it then reaches repay that drain; slots charged back to back
+    before them pay that drain once, as a group (#834). No drain is counted
     with ``reserve_holds`` (the discharge reserve keeps the energy for dearer
     hours until the sun covers the house) when the deadline comes before that.
     On a day with forecast solar that never covers the house the reserve holds
@@ -842,59 +936,150 @@ def allocate_price_slots(
     # Energy stored when each interval starts, given the current allocations.
     # Rebuilt only when the allocations change: they only ever grow while
     # slots are being assigned, so their count and total identify a version.
-    trajectory_key: tuple[int, float] | None = None
+    trajectory_key: tuple | None = None
     trajectory_starts: list[datetime] = []
     trajectory_energy: list[float] = []
+    # Room a charge before interval i still has when each later booked charge
+    # lands, offset by the drain the battery could not cover: added energy
+    # survives to interval j less the deficits before j, so the bound past
+    # interval k is ``trajectory_later_room[k + 1] - trajectory_absorbed[k]``.
+    trajectory_later_room: list[float] = [math.inf]
+    trajectory_absorbed: list[float] = [0.0]
     trajectory_final = 0.0
 
-    def build_trajectory() -> None:
-        nonlocal trajectory_key, trajectory_starts, trajectory_energy, trajectory_final
-        rate = power * efficiency
-        charges = sorted(
-            (
-                max(now, item.start),
-                (
-                    min(item.end, max(now, item.start) + timedelta(hours=amount / rate))
-                    if rate > _EPSILON
-                    else item.end
-                ),
-                amount,
-            )
-            for item, amount in allocations.items()
-            if amount > _EPSILON
+    def left_state() -> tuple[int, float]:
+        entries = [entry for entries in left_hours.values() for entry in entries]
+        return len(entries), sum(entry[1] for entry in entries)
+
+    def trajectory_version() -> tuple:
+        return (len(allocations), sum(allocations.values()), left_state())
+
+    charge_rate = power * efficiency
+
+    def window_end(begin: datetime, item: PriceSlot, amount: float) -> datetime:
+        return (
+            min(item.end, begin + timedelta(hours=amount / charge_rate))
+            if charge_rate > _EPSILON
+            else item.end
         )
+
+    def simulate(charges, partial: bool = False):
+        """Stored energy per interval for ``(begin, stop, kWh)`` charges, in
+        time order: the grid carries the house while a charge runs. Also
+        returns the energy lost to the full battery (charge or solar).
+
+        Without ``partial`` an interval a charge touches is carried whole:
+        the room check books full slots as if trimmed (short), and draining
+        the rest of their quarters there overbooked the night."""
         energy = min(_finite_non_negative(usable_initial_kwh), usable_capacity)
         starts: list[datetime] = []
         values: list[float] = []
+        peaks: list[float | None] = []
+        deficits: list[float] = []
+        lost = 0.0
         added = 0
         window = 0
         for interval in intervals:
-            # Energy charged before this interval is stored; the battery then
-            # covers the house again, so it drains like any other energy.
+            # Energy charged before this interval is stored; the battery
+            # then covers the house again, so it drains like any other.
+            landed = added
             while added < len(charges) and charges[added][0] < interval.start:
+                lost += max(0.0, energy + charges[added][2] - usable_capacity)
                 energy = min(usable_capacity, energy + charges[added][2])
                 added += 1
             starts.append(interval.start)
             values.append(energy)
             while added < len(charges) and charges[added][0] <= interval.start:
+                lost += max(0.0, energy + charges[added][2] - usable_capacity)
                 energy = min(usable_capacity, energy + charges[added][2])
                 added += 1
-            # The grid carries the house only while a slot is still charging
-            # (from its start until its amount is stored), not for the rest of
-            # the slot.
+            peaks.append(energy if added > landed else None)
+            # The grid carries the house only while a slot is still
+            # charging (from its start until its amount is stored), not
+            # for the rest of the slot.
             while window < len(charges) and charges[window][1] <= interval.start:
                 window += 1
-            charging = window < len(charges) and charges[window][0] < interval.end
+            interval_hours = _duration_hours(interval.start, interval.end)
+            charging = 0.0
+            for begin, stop, _amount in charges[window:]:
+                if begin >= interval.end:
+                    break
+                charging += (
+                    max(0.0, _duration_hours(
+                        max(begin, interval.start), min(stop, interval.end)
+                    ))
+                    if partial
+                    else interval_hours
+                )
             flow = interval.solar_kwh - interval.consumption_kwh
-            if flow < 0.0 and charging:
-                flow = 0.0
+            if flow < 0.0 and charging > 0.0:
+                # A charge that stops inside the interval leaves the rest of
+                # it to the battery.
+                flow *= max(0.0, 1.0 - charging / interval_hours)
+            deficits.append(max(0.0, -(energy + flow)))
+            lost += max(0.0, energy + flow - usable_capacity)
             energy = max(0.0, min(usable_capacity, energy + flow))
         while added < len(charges):
+            lost += max(0.0, energy + charges[added][2] - usable_capacity)
             energy = min(usable_capacity, energy + charges[added][2])
             added += 1
+        return starts, values, peaks, deficits, energy, lost
+
+    def build_trajectory() -> None:
+        nonlocal trajectory_key, trajectory_starts, trajectory_energy, trajectory_final
+        nonlocal trajectory_later_room, trajectory_absorbed
+        rate = power * efficiency
+
+        booked_charges = [
+            (max(now, item.start), item, amount)
+            for item, amount in allocations.items()
+            if amount > _EPSILON
+        ]
+
+        starts, values, peaks, deficits, final, _lost = simulate(sorted(
+            (begin, window_end(begin, item, amount), amount)
+            for begin, item, amount in booked_charges
+        ))
+        if grid_carries_load_while_charging and rate > _EPSILON:
+            # Later charges are checked against what they really store, as the
+            # trim below will leave it: an amount in an hour the battery covers
+            # still counts the load the grid carries while it charges; one in
+            # an hour left to the grid (#662) is stored energy already.
+            drained = _without_load_left_to_grid(
+                intervals,
+                [
+                    (entry[0], entry[1])
+                    for entries in left_hours.values()
+                    for entry in entries
+                ],
+            )
+            stored_charges = []
+            # ponytail: a full slot is kept whole only when the plan falls
+            # short (the trim's cover); taken as trimmed here, so a short plan
+            # may still book a little more than fits.
+            for begin, item, amount in booked_charges:
+                stored = min(
+                    amount,
+                    _net_of_load_carried_by_grid(
+                        drained, amount, begin, min(item.end, horizon_end), rate
+                    ),
+                )
+                stored_charges.append((begin, window_end(begin, item, stored), stored))
+            _s, _v, peaks, deficits, _f, _l = simulate(sorted(stored_charges))
         trajectory_starts, trajectory_energy = starts, values
-        trajectory_final = energy
-        trajectory_key = (len(allocations), sum(allocations.values()))
+        absorbed = [0.0]
+        for deficit in deficits:
+            absorbed.append(absorbed[-1] + deficit)
+        later_room = [math.inf] * (len(peaks) + 1)
+        for i in range(len(peaks) - 1, -1, -1):
+            later_room[i] = later_room[i + 1]
+            if peaks[i] is not None:
+                later_room[i] = min(
+                    later_room[i], usable_capacity - peaks[i] + absorbed[i]
+                )
+        trajectory_later_room, trajectory_absorbed = later_room, absorbed
+        trajectory_final = final
+        trajectory_key = trajectory_version()
 
     def room_at_start(slot: PriceSlot) -> float:
         # Room the battery has when ``slot`` opens. Only the extended horizon
@@ -908,7 +1093,7 @@ def allocate_price_slots(
         # under-booked the later slots.
         if not required_from_deadlines:
             return math.inf
-        if trajectory_key != (len(allocations), sum(allocations.values())):
+        if trajectory_key != trajectory_version():
             build_trajectory()
         opens = max(now, slot.start)
         index = bisect_right(trajectory_starts, opens) - 1
@@ -918,9 +1103,25 @@ def allocate_price_slots(
             energy = trajectory_final
         else:
             energy = trajectory_energy[index]
-        return max(
-            0.0, usable_capacity - energy - allocations.get(slot, 0.0)
+        room_now = usable_capacity - energy - allocations.get(slot, 0.0)
+        # Energy added here is still stored later, less the drain the battery
+        # could not cover meanwhile, so it must also fit when each later booked
+        # charge lands: those slots (a group is filled from its end backwards)
+        # saw an empty battery and were all booked in full. A solar fill is
+        # left to ``room()`` (#704). ponytail: booked amounts are gross of the
+        # load the grid carries while they charge, so this errs towards less.
+        room_later = (
+            trajectory_later_room[index + 1] - trajectory_absorbed[index + 1]
         )
+        return max(0.0, min(room_now, room_later))
+
+    def fit(slot: PriceSlot, free: float, clip: bool = True) -> float:
+        # What ``slot`` may still store: the cheap room-at-start bound first,
+        # so the solar-clipping ``room()`` runs only when it can matter.
+        at_start = room_at_start(slot)
+        if at_start <= _EPSILON:
+            return at_start
+        return min(room(slot, free) if clip else free, at_start)
 
     # The last deadline in each segment that was left to the grid: the battery
     # is empty there, so energy stored before it is gone by then.
@@ -1117,13 +1318,25 @@ def allocate_price_slots(
             key=lambda slot: (
                 effective_price(slot),
                 0 if slot in allocations else 1,
+                # Adjacency only breaks ties: fewer relay starts (#571, #858).
+                0
+                if any(
+                    other.end == slot.start or slot.end == other.start
+                    for other, amount in allocations.items()
+                    if amount > _EPSILON
+                )
+                else 1,
                 -capacity(slot, deadline.deadline, start),
                 slot.start,
             ),
         )
+        ordered = sorted(eligible, key=lambda item: item.start)
+        position = {item: i for i, item in enumerate(ordered)}
+        # Groups already rejected, per allocation state (#834).
+        rejected_groups: set[tuple[object, object, int, float]] = set()
         for slot in eligible:
             free = free_of(slot)
-            usable = min(room(slot, free) if clip else free, room_at_start(slot))
+            usable = fit(slot, free, clip)
             blocked += free - usable
             drain, loss = (
                 (0.0, 0.0) if cap is None
@@ -1133,6 +1346,98 @@ def allocate_price_slots(
                 usable <= drain
                 or crossing_gain(slot.price, index, missing, usable - drain) <= loss
             ):
+                # No single slot holds the drain, but slots charged back to
+                # back before it pay it once, as a group (#834). ponytail:
+                # assumes no cheaper slot takes the later deadlines first
+                # (optimistic), and clips each member's room alone, not jointly.
+                members = [slot]
+                if cap is not None and free_of(slot) > _EPSILON:
+
+                    def joins(item: PriceSlot) -> bool:
+                        return (
+                            not lasts(item, deadline.deadline, until)
+                            and free_of(item) > _EPSILON
+                        )
+
+                    low = high = position[slot]
+                    while (
+                        low > 0
+                        and ordered[low - 1].end == ordered[low].start
+                        and joins(ordered[low - 1])
+                    ):
+                        low -= 1
+                    while (
+                        high + 1 < len(ordered)
+                        and ordered[high].end == ordered[high + 1].start
+                        and joins(ordered[high + 1])
+                    ):
+                        high += 1
+                    members = ordered[low:high + 1]
+                group_key = (
+                    members[0].start,
+                    members[-1].end,
+                    len(allocations),
+                    sum(allocations.values()),
+                )
+                if len(members) > 1 and group_key not in rejected_groups:
+                    usables = {
+                        item: fit(item, free_of(item), clip)
+                        for item in members
+                    }
+                    usable_g = sum(usables.values())
+                    entries = crossing_entries(members[-1], start, deadline.deadline)
+                    drain_g = sum(e[1] for e in entries)
+                    need = min(missing, max(0.0, usable_g - drain_g)) + drain_g
+                    # Filled from the group's end backwards, so what is booked
+                    # always reaches the last member: an unbooked tail would
+                    # drain the stored energy in hours counted as covered.
+                    # ponytail: prefers the group's later slots over cheaper
+                    # earlier ones; cheapest-first needs the drain recomputed.
+                    fill: list[tuple[PriceSlot, float]] = []
+                    left = need
+                    for item in reversed(members):
+                        amount = min(left, usables[item])
+                        if amount > _EPSILON:
+                            fill.append((item, amount))
+                            left -= amount
+                    filled = sum(amount for _item, amount in fill)
+                    price_g = (
+                        sum(amount * item.price for item, amount in fill) / filled
+                        if filled > _EPSILON
+                        else slot.price
+                    )
+                    loss_g = sum(e[1] * (price_g - e[2]) for e in entries)
+                    if (
+                        drain_g > _EPSILON
+                        and usable_g > drain_g
+                        and crossing_gain(
+                            price_g, index, missing, usable_g - drain_g
+                        ) > loss_g
+                    ):
+                        booked_total = 0.0
+                        for item in reversed(members):
+                            free_now = free_of(item)
+                            usable_now = fit(item, free_now, clip)
+                            amount = min(need - booked_total, usable_now)
+                            if amount <= _EPSILON:
+                                continue
+                            allocations[item] = allocations.get(item, 0.0) + amount
+                            booked[item] = min(
+                                booked.get(item, deadline.deadline), deadline.deadline
+                            )
+                            crossed.add(item)
+                            booked_total += amount
+                        for entry in entries:
+                            entry[3][2] += entry[1]
+                            entry[1] = 0.0
+                        cheaper_to_import -= drain_g
+                        segment_unusable[start] -= drain_g
+                        served_target += drain_g
+                        missing = max(0.0, missing - max(0.0, booked_total - drain_g))
+                        if missing <= _EPSILON:
+                            break
+                    else:
+                        rejected_groups.add(group_key)
                 continue
             take = min(missing, usable - drain)
             if take <= _EPSILON:
@@ -1168,7 +1473,7 @@ def allocate_price_slots(
                 0.0,
                 capacity(slot, deadline.deadline, start) - allocations.get(slot, 0.0),
             )
-            usable = min(room(slot, free) if clip else free, room_at_start(slot))
+            usable = fit(slot, free, clip)
             blocked += free - usable
             take = min(missing, usable, premium_budget)
             if take <= _EPSILON:
@@ -1209,7 +1514,7 @@ def allocate_price_slots(
     blocked = 0.0
     for slot in sorted(candidates, key=lambda item: (item.price, item.start)):
         free = max(0.0, capacity(slot) - allocations.get(slot, 0.0))
-        usable = min(room(slot, free), room_at_start(slot))
+        usable = fit(slot, free)
         blocked += free - usable
         take = min(missing_total, usable)
         if take <= _EPSILON:
@@ -1220,7 +1525,7 @@ def allocate_price_slots(
             break
     for slot in sorted(premium_candidates, key=lambda item: (item.price, item.start)):
         free = max(0.0, capacity(slot) - allocations.get(slot, 0.0))
-        usable = min(room(slot, free), room_at_start(slot))
+        usable = fit(slot, free)
         blocked += free - usable
         take = min(missing_total, usable, premium_budget)
         if take <= _EPSILON:
@@ -1311,6 +1616,7 @@ def allocate_price_slots(
         covered = 0.0
         carried_deadline = 0.0
         carried_flexible = 0.0
+        trimmed: dict[PriceSlot, float] = {}
         for slot in sorted(allocations, key=lambda item: item.start):
             amount = allocations[slot]
             start, end = max(now, slot.start), min(slot.end, horizon_end)
@@ -1345,6 +1651,67 @@ def allocate_price_slots(
                 allocation_deadlines.pop(slot, None)
             else:
                 allocations[slot] = net
+                if amount - net > _EPSILON:
+                    trimmed[slot] = amount - net
+        if import_value_efficiency is not None and trimmed:
+            # The trim stops each slot once its need is stored. When that need
+            # had been capped first (by the room, or by what the slots can
+            # store, the rest left to the grid), the battery is then empty in
+            # hours that repay the slot, and the shortfall above is zero, so
+            # it never kept them whole. Give the trimmed energy back, latest
+            # slot first, as far as it fits and covers such hours.
+            def stop_of(begin: datetime, item: PriceSlot, amount: float) -> datetime:
+                # At the rate the grid ceiling leaves the slot: a charge at
+                # the bare power stops too soon and drains the rest.
+                hours = _duration_hours(begin, min(item.end, horizon_end))
+                full = capacity(item)
+                if full <= _EPSILON or hours <= 0.0:
+                    return item.end
+                return begin + timedelta(hours=hours * min(1.0, amount / full))
+
+            def simulated() -> tuple[list[float], float]:
+                result = simulate(sorted(
+                    (begin, stop_of(begin, item, amount), amount)
+                    for item, amount in allocations.items()
+                    for begin in (max(now, item.start),)
+                ), partial=True)
+                return result[3], result[5]
+
+            for slot in sorted(trimmed, key=lambda item: item.start, reverse=True):
+                before, lost_before = simulated()
+                worth = 0.0
+                for interval, deficit in zip(intervals, before):
+                    if interval.start < max(now, slot.start) or deficit <= _EPSILON:
+                        continue
+                    # The battery covers the house first: an hour that does
+                    # not repay the slot would take the energy before later ones.
+                    cap = value_cap(EnergyDeadline(interval.end, 0.0))
+                    if cap is None or cap == _UNPRICED or cap < slot.price:
+                        break
+                    worth += deficit
+                give = min(trimmed[slot], worth)
+                if give <= _EPSILON:
+                    continue
+                base = allocations[slot]
+                allocations[slot] = base + give
+                if simulated()[1] > lost_before + _EPSILON:
+                    # What does not fit is lost to the full battery, and a
+                    # longer charge also drains less, so the loss is not
+                    # linear in the amount: bisect what fits. ponytail: six
+                    # steps, within 2 % of the trimmed energy.
+                    low, high = 0.0, give
+                    for _ in range(6):
+                        allocations[slot] = base + (low + high) / 2
+                        if simulated()[1] > lost_before + _EPSILON:
+                            high = (low + high) / 2
+                        else:
+                            low = (low + high) / 2
+                    give = low
+                    allocations[slot] = base + give
+                if allocation_deadlines.get(slot) is None:
+                    carried_flexible -= give
+                else:
+                    carried_deadline -= give
         covered_deadline = min(covered, deadline_shortfall)
         deadline_shortfall -= covered_deadline
         deadline_required = max(

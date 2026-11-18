@@ -13,12 +13,18 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.omnibattery.drivers.zendure import ZendureLocalDriver
+from tests.conftest import _FakeMarstekDriver
 from tests.test_weekly_full_charge_lifecycle import _controller, _manager
 
 
 def _zendure(soc_set=95, stored=100):
     return SimpleNamespace(
         name="Zendure",
+        # The real Zendure query (it does not read the instance).
+        driver=SimpleNamespace(
+            device_max_soc=lambda data: ZendureLocalDriver.device_max_soc(None, data)
+        ),
         # The coordinator copies the reported socSet into max_soc every poll.
         max_soc=soc_set,
         data={"battery_soc": 50, "soc_set": soc_set},
@@ -35,6 +41,7 @@ def _zendure(soc_set=95, stored=100):
 def _marstek_v2(live=90, stored=95):
     return SimpleNamespace(
         name="Venus v2",
+        driver=_FakeMarstekDriver(),
         max_soc=live,
         data={"battery_soc": 50, "charging_cutoff_capacity": live},
         battery_manual_mode_enabled=False,
@@ -59,6 +66,7 @@ def _run(*coordinators):
     manager._bms_cutoff_counts = {}
     manager.is_battery_full = MagicMock(return_value=False)
     manager.is_active = MagicMock(return_value=True)
+    manager.update_solar_outlook = MagicMock()
     manager.save_state = AsyncMock()
     return controller, manager
 

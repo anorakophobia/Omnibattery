@@ -57,7 +57,7 @@ Optional controls in the **Control** tab solve different problems:
 | No schedule appears | Future prices are unavailable or the wrong provider entity was selected | `price_data_status`, provider integration, and price-sensor attributes |
 | Cheap periods appear but no charge starts | The calendar is informational, no deficit remains, or the per-period quota is already met | `charging_needed`, `slot_energy_targets_kwh`, and battery target SOC |
 | The cheapest period was skipped | It occurs after the energy deadline, exceeds the charge price ceiling, or fails the arbitrage margin | `energy_deadlines`, active price controls, and `total_shortfall_kwh` |
-| The schedule reports a shortfall | Eligible periods cannot supply enough energy before it is needed | Charge price ceiling, charging power, battery capacity, phase and contracted-power limits |
+| The schedule reports a shortfall | Eligible periods cannot supply enough energy before it is needed | Charge price ceiling, charging power, battery capacity, phase and Maximum grid import limits |
 | Tomorrow’s cheaper periods are missing | The provider has not published them or the active period is allowed to finish before replanning | Provider data and **Re-evaluate Predictive Charging** after publication |
 | A price feature is enabled but inactive | Its required forecast, profile, export price, battery capacity, or grid reading is unavailable | The feature’s status binary sensor and reason attribute |
 | Solar surplus exports unexpectedly | **Surplus Price Hold** selected a later, cheaper absorption period | **Surplus Price Hold Status** and its next release time |
@@ -101,8 +101,8 @@ Optional controls in the **Control** tab solve different problems:
     The daily plan can be rebuilt by these events:
 
     - **Before a selected period:** one hour before a future selected period, Omnibattery checks the remaining balance. It silently removes the period if energy is now sufficient or confirms it by notification when the deficit remains. Back-to-back periods are not reconsidered while the previous one is charging.
-    - **Late-day assessment:** when solar start has been detected, this runs about 1.5 hours before estimated production ends; otherwise it uses 16:00. It adds eligible future periods only for a remaining deficit of at least 0.3 kWh. Those periods pass the same price ceiling and optional arbitrage margin as the daily plan.
-    - **SOC drop:** a chronological plan rebuilds after a five-percentage-point drop from the last evaluated fleet average. A fallback non-chronological plan retains the 30-point threshold. An SOC rise does not trigger it.
+    - **Late-day assessment:** when solar start has been detected, this runs about 1.5 hours before estimated production ends; otherwise it uses 16:00. It rebuilds the remaining-horizon plan, exactly like the other rebuilds.
+    - **SOC drop:** the plan rebuilds when the fleet SOC falls three percentage points below what it projected for the end of the current quarter, which also catches a planned charge that did not happen. Without a projection, a chronological plan rebuilds after a five-point drop from the last evaluated fleet average, and a fallback non-chronological plan after 30 points. An SOC rise does not trigger it.
     - **Solar forecast revision:** a change of at least 1.5 kWh in either direction rebuilds the plan, with a 30-minute cooldown and a maximum of four such rebuilds per day. Measured solar since the saved reading is removed before comparison, and an unavailable sensor is not treated as a collapsed forecast.
     - **Excluded-device solar claim:** a material change in an excluded load, such as an electric vehicle session, rebuilds the plan because that device changes how much forecast solar is available to the battery.
     - **Tomorrow’s prices:** newly published prices rebuild the remaining horizon once per day. If a selected charge period is running, this rebuild waits until it ends.
@@ -124,15 +124,17 @@ Optional controls in the **Control** tab solve different problems:
     opportunistic space = current free space − remaining solar reserve
     ```
 
-    A guaranteed-minimum-SOC requirement is the safety exception. Missing solar data makes anti-curtailment fail safe but does not cancel an otherwise valid negative import-price opportunity. Contracted power, battery limits, manual control, backup state, availability, and other safety blockers still apply.
+    A guaranteed-minimum-SOC requirement is the safety exception. Missing solar data makes anti-curtailment fail safe but does not cancel an otherwise valid negative import-price opportunity. Maximum grid import, battery limits, manual control, backup state, availability, and other safety blockers still apply.
 
     ### Smart Pre-discharge / Anti-curtailment
 
-    This opt-in feature does not control a solar inverter. It finds periods where the feed-in price is at or below **Negative Feed-in Price Threshold** and forecast solar surplus exceeds household consumption. Before the first risk period, it selects the most valuable eligible periods for pre-discharge until enough battery space exists, subject to SOC floors, reserves, power limits, and blockers.
+    This opt-in feature does not control a solar inverter. It finds periods where the **export** price is at or below **Negative Feed-in Price Threshold** (the import price when no export price sensor is configured) and forecast solar surplus exceeds household consumption. Before the first risk period, it selects the most valuable eligible periods for pre-discharge until enough battery space exists, subject to SOC floors, reserves, power limits, and blockers.
+
+    With an export price sensor, the Dynamic Pricing plan decides the pre-discharge itself, in the same plan as the grid charge and the other decisions: when to discharge and how much, up to tomorrow's sun when its prices are out. It makes only the space the risk's sun needs, counting what the home will use before the risk, never below the reserve, never inside a risk period and never at a battery export price at or below the threshold; it does not buy energy before a risk only to discharge it. In those periods the battery may also stop charging and let the solar surplus go to the grid, to keep that space free. The plan's notification lists these periods ("Making room for the sun"), and `curtailment_status` shows the plan's risk periods and discharge periods with `decided_by: plan`. Without an export price sensor the pre-discharge works as described below.
 
     **Negative Feed-in Price Threshold** defaults to 0.00 €/kWh. **Pre-discharge Lowest SOC** adds a floor; it defaults to 20%, while a value of 0 uses the batteries’ existing floors. Both show on the card only while **Smart Pre-discharge** is on. Risk periods are grouped into approximately one-hour blocks to reduce repeated switching.
 
-    Deliberate export uses the fleet’s own discharge power, capped by **System Power Limits** when they are on; there is no separate export-power setting.
+    Export is automatic: the battery may export up to the fleet's discharge power, capped by **System Power Limits** when they are on, only to create the calculated space. There is no separate export-power setting.
 
     During a risk period, net grid target is clamped to zero so the battery can cover household consumption without deliberate export. Minimum and guaranteed-minimum SOC, operating time slots, manual control, backup state, unavailable batteries, and capacity protection still win. Missing prices, forecast, SOC, capacity, or grid data clears the override and blocker.
 
@@ -188,13 +190,13 @@ Optional controls in the **Control** tab solve different problems:
 
     ### Minimum Arbitrage Margin and round-trip efficiency
 
-    The optional **Minimum Arbitrage Margin** rejects a charge period unless the expected future discharge value covers conversion losses and the selected margin:
+    The **Minimum Arbitrage Margin** rejects a charge period unless the expected future discharge value covers conversion losses and the selected margin:
 
     ```text
     expected_discharge_price × round_trip_efficiency − charge_price ≥ margin
     ```
 
-    The margin is off when set to 0, which is also how an unset margin shows. It applies in addition to **Charge Price Ceiling**, and the stricter ceiling wins. It gates the 00:05 plan and every later rebuild, including the late-day assessment. Energy needed for **Guaranteed Minimum SOC** is the exception: only **Charge Price Ceiling** limits it.
+    A margin of 0, which is also how an unset margin shows, means no profit on top of the losses: the round-trip efficiency alone decides. It applies in addition to **Charge Price Ceiling**, and the stricter ceiling wins. It gates the 00:05 plan and every later rebuild, including the late-day assessment. Energy needed for **Guaranteed Minimum SOC** is the exception: only **Charge Price Ceiling** limits it.
 
     `expected_discharge_price` is set per stored kWh, not for the whole deficit. The cheapest charge periods take the most expensive later periods, and each later period counts once. So the first kWh is compared with the evening peak, and the last with whatever cheaper hour it would replace. Energy the home needs at a given time is compared with the import price at that time. When importing then costs less than charging earlier with the round-trip losses, that energy is left to the grid and reported as `cheaper_to_import_kwh` instead of a shortfall. If no period qualifies, `chronological_plan_reason` is `price_threshold` and `cheapest_rejected_slot` shows the cheapest period with the ceiling it missed.
 

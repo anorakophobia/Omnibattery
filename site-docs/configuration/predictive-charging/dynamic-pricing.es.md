@@ -57,7 +57,7 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
 | No aparece ningún horario | Los precios futuros no están disponibles o se eligió la entidad de proveedor incorrecta | `price_data_status`, integración del proveedor y atributos del sensor de precio |
 | Aparecen periodos baratos pero no empieza la carga | El calendario es informativo, no queda déficit o ya se cumplió la cuota por periodo | `charging_needed`, `slot_energy_targets_kwh` y SOC objetivo de batería |
 | Se omitió el periodo más barato | Ocurre después del plazo energético, supera el techo de precio de carga o no cumple el margen de arbitraje | `energy_deadlines`, controles de precio activos y `total_shortfall_kwh` |
-| El horario informa de un déficit no cubierto | Los periodos elegibles no pueden suministrar suficiente energía antes de necesitarla | Techo de precio de carga, potencia de carga, capacidad de batería y límites de fase y potencia contratada |
+| El horario informa de un déficit no cubierto | Los periodos elegibles no pueden suministrar suficiente energía antes de necesitarla | Techo de precio de carga, potencia de carga, capacidad de batería y límites de fase y Máximo de importación de red |
 | Faltan periodos más baratos de mañana | El proveedor aún no los ha publicado o se permite que termine el periodo activo antes de replanificar | Datos del proveedor y **Reevaluar carga predictiva** tras su publicación |
 | Una función de precio está activada pero inactiva | No están disponibles su previsión, perfil, precio de exportación, capacidad de batería o lectura de red requeridos | Sensor binario de estado de la función y atributo de motivo |
 | El excedente solar se exporta inesperadamente | **Retención de excedente por precio** seleccionó un periodo posterior de absorción más barato | **Estado de retención de excedente por precio** y su próxima hora de liberación |
@@ -101,8 +101,8 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
     El plan diario puede reconstruirse mediante estos eventos:
 
     - **Antes de un periodo seleccionado:** una hora antes de un futuro periodo seleccionado, Omnibattery comprueba el balance restante. Elimina silenciosamente el periodo si ahora basta la energía o lo confirma mediante notificación si persiste el déficit. Los periodos consecutivos no se reconsideran mientras el anterior está cargando.
-    - **Evaluación de final del día:** cuando se ha detectado el inicio solar, se ejecuta aproximadamente 1,5 horas antes del final de producción estimado; en caso contrario usa las 16:00. Añade futuros periodos elegibles solo para un déficit restante de al menos 0,3 kWh. Esos periodos deben respetar el mismo techo de precio y cumplir el mismo margen de arbitraje opcional que el plan diario.
-    - **Caída de SOC:** un plan cronológico se reconstruye tras una caída de cinco puntos porcentuales desde la última media de flota evaluada. Un plan alternativo no cronológico conserva el umbral de 30 puntos. Una subida de SOC no lo activa.
+    - **Evaluación de final del día:** cuando se ha detectado el inicio solar, se ejecuta aproximadamente 1,5 horas antes del final de producción estimado; en caso contrario usa las 16:00. Reconstruye el plan del horizonte restante, igual que las demás reconstrucciones.
+    - **Caída de SOC:** el plan se reconstruye cuando el SOC de la flota cae tres puntos porcentuales por debajo de lo que proyectaba para el final del cuarto de hora en curso; así también detecta una carga planificada que no ocurrió. Sin proyección, un plan cronológico se reconstruye tras caer cinco puntos desde la última media de flota evaluada, y un plan alternativo no cronológico tras 30 puntos. Una subida de SOC no lo activa.
     - **Revisión de previsión solar:** un cambio de al menos 1,5 kWh en cualquier dirección reconstruye el plan, con un periodo de espera de 30 minutos y un máximo de cuatro reconstrucciones al día. La solar medida desde la lectura guardada se elimina antes de comparar, y un sensor no disponible no se trata como una previsión desplomada.
     - **Reclamación solar de dispositivo excluido:** un cambio importante en una carga excluida, como una sesión de vehículo eléctrico, reconstruye el plan porque ese dispositivo cambia cuánta solar prevista queda para la batería.
     - **Precios de mañana:** los precios recién publicados reconstruyen el horizonte restante una vez al día. Si hay un periodo de carga seleccionado en curso, la reconstrucción espera hasta que termine.
@@ -124,15 +124,17 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
     opportunistic space = current free space − remaining solar reserve
     ```
 
-    Un requisito de SOC mínimo garantizado es la excepción de seguridad. La falta de datos solares hace que la antilimitación de producción falle de forma segura, pero no cancela una oportunidad válida de precio de importación negativo. Potencia contratada, límites de batería, control manual, estado de respaldo, disponibilidad y demás bloqueos de seguridad siguen aplicándose.
+    Un requisito de SOC mínimo garantizado es la excepción de seguridad. La falta de datos solares hace que la antilimitación de producción falle de forma segura, pero no cancela una oportunidad válida de precio de importación negativo. Máximo de importación de red, límites de batería, control manual, estado de respaldo, disponibilidad y demás bloqueos de seguridad siguen aplicándose.
 
     ### Predescarga inteligente / Antilimitación de producción
 
-    Esta función opcional no controla un inversor solar. Encuentra periodos donde el precio de inyección es igual o inferior a **Umbral de precio de inyección negativo** y el excedente solar previsto supera el consumo de la vivienda. Antes del primer periodo de riesgo, selecciona los periodos elegibles de mayor valor para predescargar hasta que exista suficiente espacio de batería, sujeto a suelos de SOC, reservas, límites de potencia y bloqueos.
+    Esta función opcional no controla un inversor solar. Encuentra periodos donde el precio de **exportación** es igual o inferior a **Umbral de precio de inyección negativo** (el de importación si no hay sensor de precio de exportación) y el excedente solar previsto supera el consumo de la vivienda. Antes del primer periodo de riesgo, selecciona los periodos elegibles de mayor valor para predescargar hasta que exista suficiente espacio de batería, sujeto a suelos de SOC, reservas, límites de potencia y bloqueos.
+
+    Con sensor de precio de exportación, la predescarga la decide el propio plan de Precio Dinámico, junto con la carga de red y las demás decisiones: cuándo descargar y cuánto, hasta el sol de mañana cuando sus precios están publicados. Solo hace el hueco que necesita el sol del riesgo, contando lo que la casa gastará antes del riesgo, nunca por debajo de la reserva, nunca dentro de un periodo de riesgo y nunca con un precio de exportación de la batería igual o inferior al umbral; no compra energía antes de un riesgo solo para descargarla. En esos periodos la batería también puede dejar de cargar y exportar el excedente solar, para mantener libre ese espacio. La notificación del plan lista esos periodos («Making room for the sun») y `curtailment_status` muestra los periodos de riesgo y de descarga del plan con `decided_by: plan`. Sin sensor de precio de exportación, la predescarga funciona como se describe a continuación.
 
     **Umbral de precio de inyección negativo** es por defecto 0,00 €/kWh. **Predescarga: SOC más bajo** añade un suelo; por defecto es 20%, mientras que un valor de 0 usa los suelos existentes de las baterías. Ambos aparecen en la tarjeta solo mientras **Predescarga inteligente** está activada. Los periodos de riesgo se agrupan en bloques de aproximadamente una hora para reducir cambios repetidos.
 
-    La exportación deliberada usa la potencia de descarga propia de la flota, limitada por **Límites de Potencia del Sistema** cuando están activados; no hay un ajuste de potencia de exportación aparte.
+    La exportación es automática: la batería puede exportar hasta la potencia de descarga de la flota, limitada por **Límites de Potencia del Sistema** cuando están activados, solo para crear el espacio calculado. No hay un ajuste de potencia de exportación aparte.
 
     Durante un periodo de riesgo, el objetivo neto de red se limita a cero para que la batería pueda cubrir el consumo de la vivienda sin exportación deliberada. Siguen prevaleciendo SOC mínimo y mínimo garantizado, franjas horarias de funcionamiento, control manual, estado de respaldo, baterías no disponibles y protección de capacidad. La falta de precios, previsión, SOC, capacidad o datos de red elimina la anulación y el bloqueo.
 
@@ -188,13 +190,13 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
 
     ### Margen mínimo de arbitraje y eficiencia de ciclo completo
 
-    El **Margen mínimo de arbitraje** opcional rechaza un periodo de carga salvo que el valor esperado de descarga futura cubra las pérdidas de conversión y el margen seleccionado:
+    El **Margen mínimo de arbitraje** rechaza un periodo de carga salvo que el valor esperado de descarga futura cubra las pérdidas de conversión y el margen seleccionado:
 
     ```text
     expected_discharge_price × round_trip_efficiency − charge_price ≥ margin
     ```
 
-    El margen está desactivado con 0, que es también como se muestra un margen sin establecer. Se aplica además de **Techo de precio de carga**, y prevalece el techo más estricto. Filtra el plan de las 00:05 y cada reconstrucción posterior, incluida la evaluación de final del día. La energía necesaria para **SOC mínimo garantizado** es la excepción: solo la limita **Techo de precio de carga**.
+    Un margen de 0, que es también como se muestra un margen sin establecer, significa ningún beneficio sobre las pérdidas: decide solo la eficiencia de ida y vuelta. Se aplica además de **Techo de precio de carga**, y prevalece el techo más estricto. Filtra el plan de las 00:05 y cada reconstrucción posterior, incluida la evaluación de final del día. La energía necesaria para **SOC mínimo garantizado** es la excepción: solo la limita **Techo de precio de carga**.
 
     `expected_discharge_price` se calcula por kWh almacenado, no para todo el déficit. Los periodos de carga más baratos se emparejan con los periodos posteriores más caros, y cada periodo posterior cuenta una sola vez. Así, el primer kWh se compara con el pico de la tarde y el último con la hora más barata que sustituiría. La energía que la vivienda necesita en un momento dado se compara con el precio de importación en ese momento. Si importar entonces cuesta menos que cargar antes con las pérdidas del ciclo, esa energía se deja a la red y aparece como `cheaper_to_import_kwh` en lugar de como déficit. Si ningún periodo cumple, `chronological_plan_reason` vale `price_threshold` y `cheapest_rejected_slot` muestra el periodo más barato con el techo que no alcanzó.
 

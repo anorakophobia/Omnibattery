@@ -25,6 +25,15 @@ import math
 from typing import Optional
 
 from ..const import (
+    CONF_BATTERY_VERSION,
+    CONF_DC_PV_CONNECTED,
+    CONF_RS485_GATEWAY,
+    CONF_SERIAL_PORT,
+    CONF_SLAVE_ID,
+    DEFAULT_SLAVE_ID,
+    DEFAULT_VERSION,
+    NORMAL_BALANCE_BMS_CUTOFF_VERSIONS,
+    SUPPORTED_VERSIONS,
     MESSAGE_WAIT_MS,
     MESSAGE_WAIT_MS_RS485_GATEWAY,
     PACK_MAX_CELL_KEYS,
@@ -33,19 +42,63 @@ from ..const import (
     PACK_ONLINE_MASK_KEY,
     PACK_SOC_KEYS,
     READ_TIMEOUT_S,
+    MAX_POWER_BY_VERSION,
     REGISTER_MAP,
-    max_power_for_battery_version,
 )
-from ..infra.modbus_client import BLOCK_REFUSED, MarstekModbusClient, decode_registers
+from ..infra.modbus_helpers import decode_registers
+from .marstek_alarms import decode_alarms, with_alarm_registers
+from .marstek_client import BLOCK_REFUSED, MarstekModbusClient
+from .marstek_flow import MARSTEK_SETUP
 from .base import (
     BatteryDriver,
+    DriverAlarm,
     DriverCapabilities,
+    DriverContext,
+    DriverReconciliation,
+    DriverTraits,
+    LFP_CELL_VOLTAGE_PROFILE,
     ReadGroup,
+    ReconcileState,
     SetpointResult,
     TelemetrySnapshot,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+VENUS_D_2500W_MIN_EMS_VERSION = 149
+VENUS_D_LEGACY_MAX_POWER_W = 2200
+
+
+def max_power_for_battery_version(
+    battery_version: str,
+    ems_version: object = None,
+) -> int:
+    """Return the safe per-battery power ceiling for a Marstek model/FW.
+
+    Venus D accepts 2500 W only from EMS firmware 149 onward.  Unknown Venus D
+    firmware is treated conservatively until register 30200 has been read.
+    """
+    default = int(MAX_POWER_BY_VERSION.get(battery_version, 2500))
+    if battery_version != "vD":
+        return default
+    try:
+        firmware = int(float(ems_version))
+    except (TypeError, ValueError):
+        return VENUS_D_LEGACY_MAX_POWER_W
+    return (
+        default
+        if firmware >= VENUS_D_2500W_MIN_EMS_VERSION
+        else VENUS_D_LEGACY_MAX_POWER_W
+    )
+
+
+def slot_power_ceiling_by_version(battery_config) -> Optional[int]:
+    """Time-slot power ceiling of a stored Marstek version (None = unknown version)."""
+    version = battery_config.get(CONF_BATTERY_VERSION)
+    if version in MAX_POWER_BY_VERSION:
+        return max_power_for_battery_version(version, battery_config.get("ems_version"))
+    return None
+
 
 # Firmware families that share the v3 quirks: single TCP slot, int16 power, no
 # hardware SOC cut-off registers, packet correction.
@@ -160,7 +213,7 @@ def _load_definitions(version: str) -> dict[str, list[dict]]:
         binary_sensor = BINARY_SENSOR_DEFINITIONS_V3
         button = BUTTON_DEFINITIONS_V3
     else:  # v2 (default)
-        sensor = SENSOR_DEFINITIONS
+        sensor = with_alarm_registers(SENSOR_DEFINITIONS)
         number = NUMBER_DEFINITIONS
         select = SELECT_DEFINITIONS
         switch = SWITCH_DEFINITIONS
@@ -297,8 +350,116 @@ def _derive_register_blocks(definitions: list[dict]) -> list[dict]:
     return blocks
 
 
+def resolve_battery_version(battery_config, name: str | None = None) -> str:
+    """The stored ``battery_version``, or the default when absent or unsupported.
+
+    Logs an unsupported value when ``name`` is given (the coordinator passes it, so
+    the error is reported once per battery whichever driver is built).
+    """
+    version = battery_config.get(CONF_BATTERY_VERSION, DEFAULT_VERSION)
+    if version not in SUPPORTED_VERSIONS:
+        if name is not None:
+            _LOGGER.error(
+                "[%s] Unsupported battery version: %s. Defaulting to %s",
+                name, version, DEFAULT_VERSION,
+            )
+        return DEFAULT_VERSION
+    return version
+
+
 class MarstekModbusDriver(BatteryDriver):
     """Modbus-TCP driver for a single Marstek battery."""
+
+    BRAND = "marstek"
+    SETUP = MARSTEK_SETUP
+    TRAITS = DriverTraits(ip_addressed=True)
+    LABEL = "Marstek Venus"
+    MANUFACTURER = "Marstek"
+    DEFAULT_MODEL = "Venus"
+    REDACT_KEYS = frozenset({"serial_port"})
+
+    @classmethod
+    def traits_for(cls, battery_config) -> DriverTraits:
+        version = resolve_battery_version(battery_config)
+        # The same stored versions couple their packs and let the BMS own the
+        # cutoff; two traits because a driver may have one without the other.
+        coupled_packs = version in NORMAL_BALANCE_BMS_CUTOFF_VERSIONS
+        traits = replace(
+            cls.TRAITS,
+            optional_dc_pv_input=version in ("vA", "vD"),
+            bms_owns_top_cutoff=coupled_packs,
+            sequential_pack_fill=coupled_packs,
+            soc_decimals=1 if version in ("v3", "vA", "vD") else None,
+            # A stored serial port is a serial link, not an IP address.
+            ip_addressed=cls.TRAITS.ip_addressed
+            and not (battery_config.get("serial_port") or "").strip(),
+            # v2/v3 only: their app max-power setting is an 800/2500 W selector.
+            hardware_power_cap_choices=resolve_battery_version(battery_config)
+            in ("v2", "v3"),
+        )
+        # v3/vA/vD enforce the SOC limits in software, so the 30 % of the v2
+        # register doesn't apply: the config flow offers what the SOC limit
+        # entities offer. Read from the raw stored version, as the form always
+        # has (an unsupported one has no cutoff register either).
+        version = battery_config.get(CONF_BATTERY_VERSION, DEFAULT_VERSION)
+        if REGISTER_MAP.get(version, {}).get("discharging_cutoff_capacity") is None:
+            traits = replace(
+                traits,
+                min_soc_range=(
+                    traits.min_soc_range[0],
+                    int(DriverCapabilities.discharge_cutoff_range[1]),
+                    traits.min_soc_range[2],
+                ),
+                max_soc_low=int(DriverCapabilities.charge_cutoff_range[0]),
+            )
+        return traits
+
+    @classmethod
+    def slot_power_ceiling(cls, battery_config) -> Optional[int]:
+        return slot_power_ceiling_by_version(battery_config)
+
+    @classmethod
+    def link_key(cls, battery_config) -> tuple:
+        return (
+            battery_config.get("host"),
+            battery_config.get("port"),
+            battery_config.get("serial_port"),
+        )
+
+    @classmethod
+    def model_version(cls, battery_config, name: str | None = None) -> str:
+        return resolve_battery_version(battery_config, name)
+
+    @classmethod
+    def from_config(cls, battery_config, context: DriverContext) -> "MarstekModbusDriver":
+        return cls(
+            battery_config["host"],
+            battery_config["port"],
+            resolve_battery_version(battery_config),
+            battery_config.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID),
+            max_charge_power_w=context.max_charge_power_w,
+            max_discharge_power_w=context.max_discharge_power_w,
+            serial_port=battery_config.get(CONF_SERIAL_PORT) or None,
+            ems_version=battery_config.get("ems_version"),
+            rs485_gateway=battery_config.get(CONF_RS485_GATEWAY, False),
+            dc_pv_connected=bool(
+                battery_config.get(CONF_DC_PV_CONNECTED, True)
+                and cls.traits_for(battery_config).optional_dc_pv_input
+            ),
+        )
+
+    def obsolete_entity_suffixes(self) -> tuple[str, ...]:
+        """Venus A/D whose MPPT inputs are declared unused own no PV entities."""
+        if self.capabilities.has_mppt_pv and not self._dc_pv_connected:
+            return ("solar_power", "battery_cell_power")
+        return ()
+
+    def coordinator_attributes(self) -> dict:
+        return {
+            "serial_port": self._serial_port,
+            "rs485_gateway": self._rs485_gateway,
+            "ems_version": self._ems_version,
+        }
 
     def __init__(
         self,
@@ -314,6 +475,7 @@ class MarstekModbusDriver(BatteryDriver):
         serial_port: Optional[str] = None,
         ems_version: object = None,
         rs485_gateway: bool = False,
+        dc_pv_connected: bool = True,
     ) -> None:
         """Build the driver.
 
@@ -330,6 +492,9 @@ class MarstekModbusDriver(BatteryDriver):
         """
         self._version = version
         self._ems_version = ems_version
+        self._serial_port = serial_port
+        self._rs485_gateway = bool(rs485_gateway)
+        self._dc_pv_connected = bool(dc_pv_connected)
         self._is_v3_family = version in _V3_FAMILY
         self._slave_id = slave_id
 
@@ -444,6 +609,11 @@ class MarstekModbusDriver(BatteryDriver):
             min_charge_power_w=hw_charge_floor,
             min_discharge_power_w=hw_discharge_floor,
             has_mppt_pv="mppt1_power" in self._telemetry_index,
+            mppt_power_keys=tuple(
+                f"mppt{channel}_power"
+                for channel in range(1, 5)
+                if f"mppt{channel}_power" in self._telemetry_index
+            ),
             has_alarm_registers="alarm_status" in self._telemetry_index,
             has_rs485_control=REGISTER_MAP.get(version, {}).get("rs485_control") is not None,
             has_energy_counters=True,  # battery_total_energy + total_*_energy registers
@@ -453,6 +623,11 @@ class MarstekModbusDriver(BatteryDriver):
             # v3/vA/vD pace at 150 ms/frame through a single TCP slot, so a setpoint
             # write + the inverter engaging settles slower than v2's 50 ms/frame.
             actuator_latency_s=0.8 if self._is_v3_family else 0.3,
+            cell_voltage_profile=(
+                LFP_CELL_VOLTAGE_PROFILE
+                if "max_cell_voltage" in self._telemetry_index
+                else None
+            ),
         )
 
     def _set_power_definition_ceiling(self, ceiling: int) -> None:
@@ -488,11 +663,84 @@ class MarstekModbusDriver(BatteryDriver):
             )
         return changed
 
+    def reconcile(
+        self, data, *, reason, state: ReconcileState | None = None
+    ) -> DriverReconciliation | None:
+        """Venus D: clamp the device cap at init, follow the EMS firmware on poll."""
+        if self._version != "vD" or state is None:
+            return None
+        if reason == "init":
+            # A stale config entry may still carry the former unconditional
+            # 2500 W device cap.  The firmware-aware driver is authoritative.
+            return DriverReconciliation(
+                device_max_charge_power=min(
+                    state.device_max_charge_power,
+                    self._capabilities.max_charge_power_w,
+                ),
+                device_max_discharge_power=min(
+                    state.device_max_discharge_power,
+                    self._capabilities.max_discharge_power_w,
+                ),
+            )
+        if reason != "poll" or not data:
+            return None
+        ems_version = data.get("ems_version")
+        if ems_version is None:
+            return None
+
+        firmware_changed = str(state.attributes.get("ems_version")) != str(ems_version)
+        changed = self.update_ems_version(ems_version)
+        ceiling = self._capabilities.max_charge_power_w
+        device_changed = (
+            state.device_max_charge_power != ceiling
+            or state.device_max_discharge_power != ceiling
+        )
+        configured_charge = state.configured_max_charge_power
+        configured_discharge = state.configured_max_discharge_power
+        configured_changed = False
+        if configured_charge > ceiling:
+            configured_charge = ceiling
+            configured_changed = True
+        if configured_discharge > ceiling:
+            configured_discharge = ceiling
+            configured_changed = True
+
+        persist: dict = {}
+        message = None
+        if firmware_changed or changed or device_changed or configured_changed:
+            persist = {
+                "ems_version": int(ems_version),
+                "device_max_charge_power": ceiling,
+                "device_max_discharge_power": ceiling,
+            }
+            if configured_changed:
+                persist["max_charge_power"] = configured_charge
+                persist["max_discharge_power"] = configured_discharge
+            if changed or configured_changed or device_changed:
+                message = "Applied Venus D EMS %s power ceiling: %d W" % (
+                    ems_version,
+                    ceiling,
+                )
+        return DriverReconciliation(
+            device_max_charge_power=ceiling,
+            device_max_discharge_power=ceiling,
+            configured_max_charge_power=configured_charge if configured_changed else None,
+            configured_max_discharge_power=(
+                configured_discharge if configured_changed else None
+            ),
+            attributes={"ems_version": ems_version},
+            persist=persist,
+            message=message,
+        )
+
     # --- identity -----------------------------------------------------------
 
     @property
     def capabilities(self) -> DriverCapabilities:
         return self._capabilities
+
+    def active_alarms(self, data: dict) -> list[DriverAlarm]:
+        return decode_alarms(data)
 
     _MODEL_LABELS: dict[str, str] = {
         "v2": "Venus E v2",
@@ -972,6 +1220,11 @@ class MarstekModbusDriver(BatteryDriver):
             if value <= _VENUS_E_POWER_CAP_LOW_W
             else _VENUS_E_POWER_CAP_HIGH_W
         )
+
+    def ac_register_power_w(self, data: dict):
+        # ``ac_power`` is +discharge / -charge; the query speaks +charge.
+        value = data.get("ac_power")
+        return None if value is None else -float(value)
 
     def net_power_from_data(self, data: dict):
         force = data.get("force_mode")

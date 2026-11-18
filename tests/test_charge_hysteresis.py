@@ -18,6 +18,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from custom_components.omnibattery import ChargeDischargeController
+from custom_components.omnibattery.drivers.base import LFP_CELL_VOLTAGE_PROFILE
+from tests.conftest import _FakeMarstekDriver
 from custom_components.omnibattery.binary_sensor import ChargeHysteresisActiveSensor
 from custom_components.omnibattery.control.weekly_full_charge import (
     WeeklyFullChargeManager,
@@ -31,6 +33,8 @@ class _Coord:
                  vmax=3.30, pct=10, name="bat", battery_version="v2"):
         self.name = name
         self.battery_version = battery_version
+        self.driver = _FakeMarstekDriver()
+        self.capabilities = SimpleNamespace(cell_voltage_profile=LFP_CELL_VOLTAGE_PROFILE)
         self.data = {"battery_soc": soc, "max_cell_voltage": vmax}
         self.max_soc = max_soc
         self.min_soc = 10

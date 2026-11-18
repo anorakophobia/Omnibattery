@@ -16,6 +16,7 @@ from typing import Any
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 
+from ..drivers.base import AC_REGISTER_THEN_CELL
 from ..const import (
     CONF_BATTERY_PHASE,
     CONF_METER_INVERTED,
@@ -211,6 +212,10 @@ class PhasePowerLimiter:
         self._hold_discharge_w: dict[str, int] = {}
         self._degraded_since: dict[str, datetime] = {}
         self._degraded_warning_phases: set[str] = set()
+        # Phases whose persisted Repair this run has cleared. The issue survives
+        # a restart while the set above starts empty, so without this a phase that
+        # recovered during the restart kept a warning nothing would ever delete.
+        self._degraded_warning_cleared: set[str] = set()
         self._planned: dict[Any, tuple[bool, int]] = {}
         self._limited_batteries: dict[Any, dict[str, Any]] = {}
         self._last_log_signature: dict[str, tuple[Any, ...]] = {}
@@ -287,17 +292,11 @@ class PhasePowerLimiter:
                     pass
 
         data = getattr(coordinator, "data", None) or {}
-        ac_power = data.get("ac_power")
-        if ac_power is not None:
-            try:
-                return -float(ac_power)
-            except (TypeError, ValueError):
-                return 0.0
-        battery_power = data.get("battery_power")
         try:
-            return float(battery_power) if battery_power is not None else 0.0
+            value = coordinator.driver.ac_contribution_w(data, AC_REGISTER_THEN_CELL)
         except (TypeError, ValueError):
             return 0.0
+        return 0.0 if value is None else value
 
     def _read_phase(self, phase: str) -> tuple[PhaseSensorReading, float]:
         sensor_id, _ = self._phase_settings.get(phase, (None, 0.0))
@@ -924,7 +923,9 @@ class PhasePowerLimiter:
                 and since is not None
                 and (now - since).total_seconds() >= PHASE_SENSOR_DEGRADED_REPAIR_S
             )
-            if stuck == (phase in self._degraded_warning_phases):
+            if stuck == (phase in self._degraded_warning_phases) and (
+                stuck or phase in self._degraded_warning_cleared
+            ):
                 continue
             issue_id = f"three_phase_sensor_degraded_{entry_id}_{phase}"
             if stuck:
@@ -945,9 +946,11 @@ class PhasePowerLimiter:
                     },
                 )
                 self._degraded_warning_phases.add(phase)
+                self._degraded_warning_cleared.discard(phase)
             else:
                 ir.async_delete_issue(self.hass, "omnibattery", issue_id)
                 self._degraded_warning_phases.discard(phase)
+                self._degraded_warning_cleared.add(phase)
 
     def _has_manual_time_slot(self) -> bool:
         """Return whether an enabled manual operation slot is configured."""
