@@ -39,7 +39,7 @@ async def test_a_fork_v17_entry_folds_the_peak_limit_and_drops_its_entity():
         CONF_CAPACITY_PROTECTION_ENABLED: False,
         "capacity_protection_limit": 2500,
     })
-    assert entry.version == 18
+    assert entry.version == 19
     assert "capacity_protection_limit" not in entry.data
     assert entry.data[CONF_MAX_CONTRACTED_POWER] == 20000
     assert removed == ["number.limit"]
@@ -56,6 +56,6 @@ async def test_a_fork_v17_entry_with_peak_shaving_on_takes_the_lower_cap():
 
 async def test_an_upstream_v17_entry_keeps_its_cap():
     entry, removed = await _migrate(17, {CONF_MAX_CONTRACTED_POWER: 6000})
-    assert entry.version == 18
+    assert entry.version == 19
     assert entry.data[CONF_MAX_CONTRACTED_POWER] == 6000
     assert removed == []

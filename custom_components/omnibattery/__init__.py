@@ -11804,7 +11804,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "(one grid import cap: %sW)", cap,
         )
 
-    if entry.version < 18:
+    # ha-install only: this fork's ha.41 build used v18 for the round-trip
+    # efficiency step, so its entry is at 18 without upstream's v18 below.
+    # The step is idempotent, so it also runs for an entry at 18.
+    if entry.version < 19:
         from homeassistant.helpers import entity_registry as er
 
         # The backup offgrid threshold is gone: the backup exclusion follows
@@ -11825,7 +11828,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "(backup offgrid threshold removed)",
         )
 
-    if entry.version < 19:
+    # ha-install only: an entry at 18 here already took this step (as v18 on
+    # ha.41); a 0.85 stored since then is a fixed value and stays.
+    if entry.version < 18:
         if new_data.get(CONF_ROUND_TRIP_EFFICIENCY) == DEFAULT_ROUND_TRIP_EFFICIENCY:
             new_data.pop(CONF_ROUND_TRIP_EFFICIENCY)
         _LOGGER.info(
