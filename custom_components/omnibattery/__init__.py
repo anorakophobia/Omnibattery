@@ -1102,9 +1102,8 @@ class ChargeDischargeController:
             config_entry.data, CONF_DISCHARGE_PRICE_THRESHOLD, CONF_DISCHARGE_PRICE_THRESHOLD_ENABLED
         )
         self.min_arbitrage_margin = config_entry.data.get(CONF_MIN_ARBITRAGE_MARGIN, None)
-        self.round_trip_efficiency = config_entry.data.get(
-            CONF_ROUND_TRIP_EFFICIENCY, DEFAULT_ROUND_TRIP_EFFICIENCY
-        )
+        # None = measured (its "use measured" switch on); see effective_round_trip_efficiency.
+        self.round_trip_efficiency = config_entry.data.get(CONF_ROUND_TRIP_EFFICIENCY)
         self.smart_predischarge_enabled = config_entry.data.get(
             CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
         )
@@ -3527,9 +3526,7 @@ class ChargeDischargeController:
             self.config_entry.data, CONF_DISCHARGE_PRICE_THRESHOLD, CONF_DISCHARGE_PRICE_THRESHOLD_ENABLED
         )
         self.min_arbitrage_margin = self.config_entry.data.get(CONF_MIN_ARBITRAGE_MARGIN, None)
-        self.round_trip_efficiency = self.config_entry.data.get(
-            CONF_ROUND_TRIP_EFFICIENCY, DEFAULT_ROUND_TRIP_EFFICIENCY
-        )
+        self.round_trip_efficiency = self.config_entry.data.get(CONF_ROUND_TRIP_EFFICIENCY)
         self.smart_predischarge_enabled = self.config_entry.data.get(
             CONF_SMART_PREDISCHARGE_ENABLED, DEFAULT_SMART_PREDISCHARGE_ENABLED
         )
@@ -11384,8 +11381,12 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 on); the limit key and its number entity are removed.
     v17 -> v18: the backup offgrid threshold is removed from every battery,
                 with its number entity.
+    v18 -> v19: a stored round-trip efficiency of exactly the default (0.85)
+                meant "use the measured value"; that is now the absent key (its
+                "use measured" switch), so the key is dropped and a stored 0.85
+                from then on is a fixed value.
     """
-    if entry.version >= 18:
+    if entry.version >= 19:
         return True
 
     new_data = dict(entry.data)
@@ -11821,11 +11822,19 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "(backup offgrid threshold removed)",
         )
 
+    if entry.version < 19:
+        if new_data.get(CONF_ROUND_TRIP_EFFICIENCY) == DEFAULT_ROUND_TRIP_EFFICIENCY:
+            new_data.pop(CONF_ROUND_TRIP_EFFICIENCY)
+        _LOGGER.info(
+            "Omnibattery: migrated config entry to version 19 "
+            "(round-trip efficiency 0.85 now means the measured value only when unset)",
+        )
+
     hass.config_entries.async_update_entry(
         entry,
         title="Omnibattery",
         data=new_data,
-        version=18,
+        version=19,
     )
     return True
 
