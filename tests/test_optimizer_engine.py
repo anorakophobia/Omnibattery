@@ -105,6 +105,17 @@ def test_a_real_shortfall_moves_with_the_plan_s_efficiency(clock):
     assert schedule.slot_energy_targets_kwh[c] == pytest.approx(0.2 + 0.2 - (QUARTER_KWH - 0.4), abs=0.002)
 
 
+def test_a_to_end_slot_that_fell_short_grows_the_next_small_quota(clock):
+    # #899: a slot charged to its end (target 15 + 5.76 + 1 step) reads 17 %:
+    # 2.76 points short beyond the step and the hidden percent move to b.
+    battery = _Battery(15.0)
+    a, b, c = _slots(_at(11, 0), [0.10, 0.10, 0.30])
+    schedule = _optimizer_schedule([a, b, c], [QUARTER_KWH, 0.2, 0.2], [a])
+    _end_slot(clock, battery, schedule, 17.0, a)
+    assert schedule.slot_energy_targets_kwh[b] == pytest.approx(0.2 + QUARTER_KWH - 0.3, abs=0.002)
+    assert schedule.slot_energy_targets_kwh[c] == pytest.approx(0.2)
+
+
 def test_only_the_dynamic_pricing_control_plan_runs_the_optimizer(monkeypatch):
     """The dashboard projection and the diagnostics refresh keep the allocator:
     they run every minute on the event loop (design §6); the dashboard reads
@@ -368,6 +379,28 @@ def test_the_control_lock_is_held_while_the_optimizer_runs(monkeypatch):
     monkeypatch.setattr(h, "_controller", build)
     h._run_engine(scenario, monkeypatch, executor=True)
     assert seen["worker"] and seen["locked"]
+
+
+@pytest.mark.parametrize(("slot_active", "charging", "expected"), [
+    (True, True, True), (True, False, False), (False, False, False)])
+def test_a_re_plan_while_a_slot_charges_tells_the_optimizer(monkeypatch, slot_active, charging,
+                                                            expected):
+    """The start cost must not cut a running charge: going on is no start."""
+    from tests import test_predictive_scenarios as h
+
+    real_controller = h._controller
+
+    def controller(s):
+        c = real_controller(s)
+        c._current_price_slot_active = slot_active
+        c.grid_charging_active = charging
+        return c
+
+    monkeypatch.setattr(h, "_controller", controller)
+    scenario = h.load_scenario(h.SCENARIO_DIR / "834-midnight-reevaluation.json")
+    outcome = h._run_engine(scenario, monkeypatch)
+    assert outcome.planner == "optimizer"
+    assert outcome.request.charging_now is expected
 
 
 def test_a_plan_without_charge_keeps_its_projection_for_the_soc_drop_trigger(monkeypatch):

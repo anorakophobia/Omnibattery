@@ -3,7 +3,7 @@
 A stored 0.85 (the default) used to mean "use the measured value": the slider
 showed 0.85 while about 0.82 was used, and a fixed 0.85 could not be set. Now
 no stored value means measured (its "use measured" switch on), any stored
-value is used as given, and the v16 -> v17 migration drops a stored 0.85 so
+value is used as given, and the v18 -> v19 migration drops a stored 0.85 so
 existing installs keep behaving as before.
 """
 from __future__ import annotations
@@ -123,7 +123,7 @@ async def _migrate(data):
     entry = SimpleNamespace(version=16, entry_id="entry", data=dict(data))
     with _no_registry():
         assert await async_migrate_entry(hass, entry) is True
-    assert entry.version == 18
+    assert entry.version == 19
     return entry.data
 
 

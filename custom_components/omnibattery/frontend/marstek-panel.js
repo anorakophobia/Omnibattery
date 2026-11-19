@@ -119,8 +119,8 @@ const I18N = {
     bcSocMax: "Max SOC", bcSocMin: "Min SOC", bcForceMode: "Force mode",
     bcChargePower: "Charge power", bcDischargePower: "Discharge power",
     bcMaxCharge: "Max charge", bcMaxDischarge: "Max discharge",
-    bcChargeToSoc: "Charge to SOC", bcChargeHysteresis: "Charge hysteresis", bcBackup: "Backup function", bcOffgridMode: "Off-grid mode", bcEnergyExport: "Energy export",
-    bcBackupThreshold: "Backup threshold", bcVoltageTaper: "100% charge taper", bcBatteryPhase: "Battery phase",
+    bcChargeToSoc: "Charge to SOC", bcChargeHysteresis: "Charge hysteresis", bcBackup: "Backup function", bcOffgridMode: "Off-grid mode", bcOffgridModeWarn: "With the off-grid port on (normal or economy) and something plugged in, the firmware does not charge from the grid in its usual mode. Omnibattery then sends charge commands in manual mode, which the device may save to its flash memory on every power change. If you don't use this port, set it to off.", bcEnergyExport: "Energy export",
+    bcVoltageTaper: "100% charge taper", bcBatteryPhase: "Battery phase",
     secPhaseProtection: "Three-phase protection", threePhaseProtection: "Three-phase current protection",
     secManual: "Manual mode", secOffgridMeter: "Off-grid meter mode", secVacation: "Vacation mode", itemEnable: "Enable",
     secTempLimit: "Temperature charge limit", itemTempLimitC: "Temperature limit", itemTempLimitBand: "Ramp band", itemTempLimitFloor: "Minimum charge power", itemTempApplyDischarge: "Also throttle discharge",
@@ -210,8 +210,8 @@ const I18N = {
     bcSocMax: "SOC máximo", bcSocMin: "SOC mínimo", bcForceMode: "Modo forzado",
     bcChargePower: "Potencia de carga", bcDischargePower: "Potencia de descarga",
     bcMaxCharge: "Máx. carga", bcMaxDischarge: "Máx. descarga",
-    bcChargeToSoc: "Cargar hasta SOC", bcChargeHysteresis: "Histéresis de carga", bcBackup: "Función de respaldo", bcOffgridMode: "Modo off-grid", bcEnergyExport: "Exportación de energía",
-    bcBackupThreshold: "Umbral de respaldo", bcVoltageTaper: "Reducción carga 100%", bcBatteryPhase: "Fase de la batería",
+    bcChargeToSoc: "Cargar hasta SOC", bcChargeHysteresis: "Histéresis de carga", bcBackup: "Función de respaldo", bcOffgridMode: "Modo off-grid", bcOffgridModeWarn: "Con el puerto off-grid activo (normal o económico) y algo enchufado, el firmware no carga desde la red en su modo habitual. Omnibattery envía entonces las órdenes de carga en modo manual, que el equipo puede guardar en su memoria flash en cada cambio de potencia. Si no usas este puerto, déjalo en off.", bcEnergyExport: "Exportación de energía",
+    bcVoltageTaper: "Reducción carga 100%", bcBatteryPhase: "Fase de la batería",
     secPhaseProtection: "Protección trifásica", threePhaseProtection: "Protección de corriente trifásica",
     secManual: "Modo manual", secOffgridMeter: "Modo de medidor off-grid", secVacation: "Modo vacaciones", itemEnable: "Activar",
     secTempLimit: "Límite de carga por temperatura", itemTempLimitC: "Límite de temperatura", itemTempLimitBand: "Banda de reducción", itemTempLimitFloor: "Potencia de carga mínima", itemTempApplyDischarge: "Reducir también la descarga",
@@ -298,8 +298,8 @@ const I18N = {
     bcSocMax: "SOC màxim", bcSocMin: "SOC mínim", bcForceMode: "Mode forçat",
     bcChargePower: "Potència de càrrega", bcDischargePower: "Potència de descàrrega",
     bcMaxCharge: "Màx. càrrega", bcMaxDischarge: "Màx. descàrrega",
-    bcChargeToSoc: "Carregar fins a SOC", bcChargeHysteresis: "Histèresi de càrrega", bcBackup: "Funció de reserva", bcOffgridMode: "Mode fora de xarxa", bcEnergyExport: "Exportació d'energia",
-    bcBackupThreshold: "Llindar de reserva", bcVoltageTaper: "Reducció càrrega 100%", bcActiveBalance: "Balanç actiu",
+    bcChargeToSoc: "Carregar fins a SOC", bcChargeHysteresis: "Histèresi de càrrega", bcBackup: "Funció de reserva", bcOffgridMode: "Mode fora de xarxa", bcOffgridModeWarn: "Amb el port fora de xarxa actiu (normal o econòmic) i alguna cosa endollada, el firmware no carrega des de la xarxa en el seu mode habitual. Omnibattery envia aleshores les ordres de càrrega en mode manual, que l'equip pot desar a la seva memòria flash a cada canvi de potència. Si no fas servir aquest port, deixa'l en off.", bcEnergyExport: "Exportació d'energia",
+    bcVoltageTaper: "Reducció càrrega 100%", bcActiveBalance: "Balanç actiu",
     secManual: "Mode manual", secOffgridMeter: "Mode de mesurador off-grid", secVacation: "Mode vacances", itemEnable: "Activar",
     secTempLimit: "Límit de càrrega per temperatura", itemTempLimitC: "Límit de temperatura", itemTempLimitBand: "Banda de reducció", itemTempLimitFloor: "Potència de càrrega mínima", itemTempApplyDischarge: "Redueix també la descàrrega",
     itemMaxContracted: "Màxim d'importació de xarxa", itemGridImportWindow: "Finestra de 15 min d'Importació de Xarxa", grpSolar: "Previsió solar", grpChargePrice: "Preu de càrrega", itemSolarSafety: "Marge de seguretat solar", itemSolarSafetyDefault: "Marge de seguretat solar: valor per defecte", tagDefault: "per defecte", itemMinSocFloorEnable: "SOC mínim garantit", itemMinSocFloor: "SOC mínim",
@@ -385,8 +385,8 @@ const I18N = {
     bcSocMax: "Max. SOC", bcSocMin: "Min. SOC", bcForceMode: "Betriebsmodus erzwingen",
     bcChargePower: "Ladeleistung", bcDischargePower: "Entladeleistung",
     bcMaxCharge: "Max. Ladeleistung", bcMaxDischarge: "Max. Entladeleistung",
-    bcChargeToSoc: "Laden bis SOC", bcChargeHysteresis: "Ladehysterese", bcBackup: "Backup-Funktion", bcOffgridMode: "Inselnetz-Modus", bcEnergyExport: "Energieeinspeisung",
-    bcBackupThreshold: "Backup-Schwelle", bcVoltageTaper: "100%-Ladungsreduktion", bcActiveBalance: "Aktiver Zellabgleich",
+    bcChargeToSoc: "Laden bis SOC", bcChargeHysteresis: "Ladehysterese", bcBackup: "Backup-Funktion", bcOffgridMode: "Inselnetz-Modus", bcOffgridModeWarn: "Bei aktivem Inselnetz-Ausgang (normal oder Sparmodus) mit angeschlossenem Verbraucher lädt die Firmware im üblichen Modus nicht aus dem Netz. Omnibattery sendet Ladebefehle dann im manuellen Modus, den das Gerät bei jeder Leistungsänderung in seinen Flash-Speicher schreiben kann. Wenn du diesen Ausgang nicht nutzt, schalte ihn aus.", bcEnergyExport: "Energieeinspeisung",
+    bcVoltageTaper: "100%-Ladungsreduktion", bcActiveBalance: "Aktiver Zellabgleich",
     secManual: "Manueller Modus", secOffgridMeter: "Off-Grid-Zählermodus", secVacation: "Urlaubsmodus", itemEnable: "Aktivieren",
     secTempLimit: "Temperaturbasierte Ladebegrenzung", itemTempLimitC: "Temperaturgrenze", itemTempLimitBand: "Drosselbereich", itemTempLimitFloor: "Minimale Ladeleistung", itemTempApplyDischarge: "Auch Entladung drosseln",
     itemMaxContracted: "Maximaler Netzbezug", itemGridImportWindow: "15-Minuten-Fenster Netzbezug", grpSolar: "Solarprognose", grpChargePrice: "Ladepreis", itemSolarSafety: "Sicherheitspuffer Solar", itemSolarSafetyDefault: "Sicherheitspuffer Solar: Standardwert", tagDefault: "Standard", itemMinSocFloorEnable: "Garantierter Mindest-SOC", itemMinSocFloor: "Mindest-SOC",
@@ -472,8 +472,8 @@ const I18N = {
     bcSocMax: "SOC max.", bcSocMin: "SOC min.", bcForceMode: "Mode forcé",
     bcChargePower: "Puissance de charge", bcDischargePower: "Puissance de décharge",
     bcMaxCharge: "Charge max.", bcMaxDischarge: "Décharge max.",
-    bcChargeToSoc: "Charger jusqu'à SOC", bcChargeHysteresis: "Hystérésis de charge", bcBackup: "Fonction de secours", bcOffgridMode: "Mode hors-réseau", bcEnergyExport: "Export d'énergie",
-    bcBackupThreshold: "Seuil de secours", bcVoltageTaper: "Réduction charge 100%", bcActiveBalance: "Équilibrage actif",
+    bcChargeToSoc: "Charger jusqu'à SOC", bcChargeHysteresis: "Hystérésis de charge", bcBackup: "Fonction de secours", bcOffgridMode: "Mode hors-réseau", bcOffgridModeWarn: "Avec le port hors-réseau actif (normal ou économie) et un appareil branché, le firmware ne charge pas depuis le réseau dans son mode habituel. Omnibattery envoie alors les commandes de charge en mode manuel, que l'appareil peut enregistrer dans sa mémoire flash à chaque changement de puissance. Si vous n'utilisez pas ce port, mettez-le sur off.", bcEnergyExport: "Export d'énergie",
+    bcVoltageTaper: "Réduction charge 100%", bcActiveBalance: "Équilibrage actif",
     secManual: "Mode manuel", secOffgridMeter: "Mode compteur hors réseau", secVacation: "Mode vacances", itemEnable: "Activer",
     secTempLimit: "Limite de charge par température", itemTempLimitC: "Limite de température", itemTempLimitBand: "Plage de réduction", itemTempLimitFloor: "Puissance de charge minimale", itemTempApplyDischarge: "Réduire aussi la décharge",
     itemMaxContracted: "Import réseau maximal", itemGridImportWindow: "Fenêtre de 15 min d'Import Réseau", grpSolar: "Prévision solaire", grpChargePrice: "Prix de charge", itemSolarSafety: "Marge de sécurité solaire", itemSolarSafetyDefault: "Marge de sécurité solaire : valeur par défaut", tagDefault: "par défaut", itemMinSocFloorEnable: "SOC minimum garanti", itemMinSocFloor: "SOC minimum",
@@ -559,8 +559,8 @@ const I18N = {
     bcSocMax: "Max. SOC", bcSocMin: "Min. SOC", bcForceMode: "Geforceerde modus",
     bcChargePower: "Laadvermogen", bcDischargePower: "Ontlaadvermogen",
     bcMaxCharge: "Max. laden", bcMaxDischarge: "Max. ontladen",
-    bcChargeToSoc: "Laden tot SOC", bcChargeHysteresis: "Laadhysterese", bcBackup: "Back-upfunctie", bcOffgridMode: "Off-grid-modus", bcEnergyExport: "Energie-export",
-    bcBackupThreshold: "Back-updrempel", bcVoltageTaper: "100%-laadbegrenzing", bcActiveBalance: "Actieve celbalans",
+    bcChargeToSoc: "Laden tot SOC", bcChargeHysteresis: "Laadhysterese", bcBackup: "Back-upfunctie", bcOffgridMode: "Off-grid-modus", bcOffgridModeWarn: "Met de off-grid-poort aan (normaal of eco) en iets aangesloten, laadt de firmware in zijn gewone modus niet uit het net. Omnibattery stuurt laadopdrachten dan in handmatige modus, die het apparaat bij elke vermogenswijziging in zijn flashgeheugen kan opslaan. Gebruik je deze poort niet, zet hem dan uit.", bcEnergyExport: "Energie-export",
+    bcVoltageTaper: "100%-laadbegrenzing", bcActiveBalance: "Actieve celbalans",
     secManual: "Handmatige modus", secOffgridMeter: "Off-grid metermodus", secVacation: "Vakantiemodus", itemEnable: "Inschakelen",
     secTempLimit: "Temperatuurbegrenzing laden", itemTempLimitC: "Temperatuurlimiet", itemTempLimitBand: "Afbouwband", itemTempLimitFloor: "Minimaal laadvermogen", itemTempApplyDischarge: "Ook ontladen terugregelen",
     itemMaxContracted: "Maximale netafname", itemGridImportWindow: "15-minutenvenster Netafname", grpSolar: "Zonneprognose", grpChargePrice: "Laadprijs", itemSolarSafety: "Veiligheidsmarge zon", itemSolarSafetyDefault: "Veiligheidsmarge zon: standaardwaarde", tagDefault: "standaard", itemMinSocFloorEnable: "Gegarandeerde min. SOC", itemMinSocFloor: "Min. SOC",
@@ -999,12 +999,10 @@ const BAT_CONTROLS = [
   { key: "charge_to_soc", domain: "number", lk: "bcChargeToSoc", icon: "mdi:battery-sync-outline" },
   { key: "charge_hysteresis_percent", domain: "number", lk: "bcChargeHysteresis", icon: "mdi:battery-sync" },
   { key: "backup_function", domain: "switch", lk: "bcBackup", icon: "mdi:home-battery-outline" },
-  // Offgrid load threshold for the backup output (software-only, no register).
-  { key: "backup_offgrid_threshold", domain: "number", lk: "bcBackupThreshold", icon: "mdi:transmission-tower-off" },
   { key: "battery_phase", domain: "select", lk: "bcBatteryPhase", icon: "mdi:transmission-tower" },
   // Zendure off-grid output port mode (select: normal/economy/off). Distinct from
   // the Marstek backup_function switch; only one exists per device.
-  { key: "grid_off_mode", domain: "select", lk: "bcOffgridMode", icon: "mdi:transmission-tower-off" },
+  { key: "grid_off_mode", domain: "select", lk: "bcOffgridMode", icon: "mdi:transmission-tower-off", warnLk: "bcOffgridModeWarn" },
   // Zendure grid feed-in (gridReverse): only "allowed" lets PV bypass at target SOC (#631).
   { key: "grid_reverse", domain: "select", lk: "bcEnergyExport", icon: "mdi:transmission-tower-export" },
   // Cell-maintenance switch (Marstek only): 100% charge voltage taper.
@@ -6582,6 +6580,7 @@ class MarstekVenusPanel extends HTMLElement {
     const label = document.createElement("span");
     label.className = "ctl-k";
     label.innerHTML = `<ha-icon icon="${c.icon}"></ha-icon><span>${cLabel}</span>`;
+    if (c.warnLk) this._attachHelp(label, this._t(c.warnLk), "mdi:alert-circle-outline");
     frag.appendChild(label);
 
     if (c.domain === "switch") {
@@ -7725,13 +7724,13 @@ class MarstekVenusPanel extends HTMLElement {
   /** Append an info (ⓘ) button to a section card header carrying options-flow
    *  help: native title for desktop hover + tap popover for touch. No-op without
    *  text (sections lacking an options-flow description get no button). */
-  _attachHelp(head, text) {
+  _attachHelp(head, text, icon = "mdi:information-outline") {
     if (!head || !text) return;
     const b = document.createElement("button");
-    b.className = "card-info";
+    b.className = icon === "mdi:information-outline" ? "card-info" : "card-info warn";
     b.setAttribute("aria-label", "info");
     b.title = text;
-    b.innerHTML = `<ha-icon icon="mdi:information-outline"></ha-icon>`;
+    b.innerHTML = `<ha-icon icon="${icon}"></ha-icon>`;
     b.addEventListener("click", (e) => {
       e.stopPropagation();
       this._showInfoPopover(b, text);
@@ -8348,6 +8347,7 @@ class MarstekVenusPanel extends HTMLElement {
       .card-info { margin-left: auto; padding: 0; border: 0; background: none; cursor: pointer;
         color: var(--ink-dim); display: grid; place-items: center; --mdc-icon-size: 16px; }
       .card-info:hover { color: var(--ink); }
+      .ctl-k .card-info.warn, .ctl-k .card-info.warn ha-icon { margin-left: 0; color: var(--warning-color, #ff9800); }
       /* narrow paired-column cards: let the label track shrink (max-content can't)
          and wrap, so sliders/buttons never overflow the card box at ~1080p */
       .sys-grid { margin-top: 14px; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); }
