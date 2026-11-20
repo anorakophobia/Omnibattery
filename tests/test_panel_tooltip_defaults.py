@@ -1,8 +1,7 @@
 """Every setting tooltip ends with its default, in all six panel languages.
 
-The rule (AGENTS.md, "A setting is more than its entity"): a setting's tooltip
-in SYS_HELP ends with one sentence stating its default, "Default: …" with the
-label of each language. The value is checked against the code's DEFAULT_*
+A setting's tooltip in SYS_HELP ends with one sentence stating its default,
+"Default: …" with the label of each language. The value is checked against the code's DEFAULT_*
 constant where there is one, so a changed default cannot drift from its
 tooltip. Status rows and buttons get no such sentence.
 """
@@ -39,7 +38,6 @@ from custom_components.omnibattery.const import (
     DEFAULT_TEMP_CHARGE_LIMIT_BAND_C,
     DEFAULT_TEMP_CHARGE_LIMIT_C,
     DEFAULT_TEMP_CHARGE_LIMIT_FLOOR_PCT,
-    DEFAULT_DISCHARGE_RESERVE_MIN_SAVING,
     DEFAULT_NEGATIVE_INJECTION_THRESHOLD,
     DEFAULT_PREDICTIVE_MIN_SOC_FLOOR,
     DEFAULT_PREDISCHARGE_RESERVE_SOC,
@@ -90,8 +88,6 @@ DEFAULTS = {
     "price_discharge_control": "off",
     "discharge_price_threshold_enabled": "off (automatic)",
     "discharge_price_threshold": "not set (automatic)",
-    "discharge_reserve": "off",
-    "discharge_reserve_min_saving": _per_kwh(DEFAULT_DISCHARGE_RESERVE_MIN_SAVING),
     "high_price_sale": "off",
     "surplus_price_hold": "off",
     "surplus_hold_min_saving": _per_kwh(DEFAULT_SURPLUS_HOLD_MIN_SAVING),
@@ -201,7 +197,7 @@ def test_every_language_ends_with_one_default_sentence(lang):
 
 
 def test_every_setting_row_of_the_panel_is_covered():
-    # A new setting row must come with its default sentence (AGENTS.md).
+    # A new setting row must come with its default sentence.
     panel = PANEL.read_text(encoding="utf-8")
     block = panel[panel.index("const SYS_SECTIONS = [") : panel.index("const SYS_HELP = {")]
     keys = set(re.findall(r'\{ key: "(\w+)"', block))
@@ -236,7 +232,7 @@ def test_a_per_kwh_default_shows_the_slider_s_unit():
     row = panel[panel.index("// static options-flow help (desktop hover title") :]
     assert "this._help(item.key, state && state.attributes && state.attributes.unit_of_measurement)" in row[:300]
     for lang in LANGS:
-        for key in ("discharge_reserve_min_saving", "surplus_hold_min_saving", "negative_injection_threshold"):
+        for key in ("surplus_hold_min_saving", "negative_injection_threshold"):
             text = _help(lang)[key]
             assert text.endswith(" {unit}."), (lang, key)
             assert "kWh." not in text.rsplit(LABEL[lang], 1)[-1], (lang, key)

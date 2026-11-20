@@ -33,8 +33,6 @@ EXPECTED = [
     ("price_discharge_control", "dischargePrice"),
     ("discharge_price_threshold_enabled", "dischargePrice"),
     ("discharge_price_threshold", "dischargePrice"),
-    ("discharge_reserve", "reserve"),
-    ("discharge_reserve_min_saving", "reserve"),
     ("discharge_reserve_status", "reserve"),
     ("high_price_sale", "highPrice"),
     ("high_price_discharge_status", "highPrice"),
@@ -137,7 +135,6 @@ def test_a_threshold_on_automatic_says_so(key, text):
     ("setting", "feature"),
     [
         ("predictive_min_soc_floor", "min_soc_floor_enabled"),
-        ("discharge_reserve_min_saving", "discharge_reserve"),
         ("surplus_hold_min_saving", "surplus_price_hold"),
         ("negative_injection_threshold", "smart_predischarge"),
         ("predischarge_reserve_soc", "smart_predischarge"),
@@ -160,7 +157,6 @@ def test_a_feature_s_settings_show_only_while_it_is_on(setting, feature):
         ("min_arbitrage_margin", 0, 0.3),
         ("negative_injection_threshold", -0.5, 0.5),
         ("surplus_hold_min_saving", 0, 0.2),
-        ("discharge_reserve_min_saving", 0, 0.2),
     ],
 )
 def test_per_kwh_sliders_have_a_draggable_range(key, lo, hi):
@@ -219,7 +215,6 @@ LEADS = {
     "base": "predictive_charging",
     "floor": "min_soc_floor_enabled",
     "dischargePrice": "price_discharge_control",
-    "reserve": "discharge_reserve",
     "highPrice": "high_price_sale",
     "surplus": "surplus_price_hold",
     "predischarge": "smart_predischarge",
@@ -239,9 +234,10 @@ def test_every_feature_group_starts_with_a_bold_line():
         first.setdefault(grp, key)
     for grp, key in LEADS.items():
         assert first[grp] == key
-    # every other group but the action button has a heading
+    # every other group has a heading, but the action button and the plan's
+    # hold status (#888 removed its switch; the row names itself)
     assert 'grpTitles: { solar: "grpSolar", chargePrice: "grpChargePrice" },' in card
-    assert set(first) - set(LEADS) - set(TITLES) == {"action"}
+    assert set(first) - set(LEADS) - set(TITLES) == {"action", "reserve"}
     for lk in TITLES.values():
         assert panel.count(f" {lk}: ") == 6
 

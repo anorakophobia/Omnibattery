@@ -47,7 +47,7 @@ Desactiva **Carga predictiva** para pausar toda la carga predictiva desde red y 
 
 ### La tarjeta de carga predictiva
 
-La tarjeta de la pestaña **Control** de Omnibattery tiene un grupo por función, separado por una línea: el interruptor, sus ajustes y su fila de estado. El orden sigue al dinero: la base (interruptor, notificaciones, estado), el margen de seguridad solar, el SOC mínimo garantizado, el precio de carga, el precio de descarga y después la reserva de descarga, Venta a precio alto, Retención de excedente por precio y la predescarga inteligente, y el botón de reevaluar.
+La tarjeta de la pestaña **Control** de Omnibattery tiene un grupo por función, separado por una línea: el interruptor, sus ajustes y su fila de estado. El orden sigue al dinero: la base (interruptor, notificaciones, estado), el margen de seguridad solar, el SOC mínimo garantizado, el precio de carga, el precio de descarga y después el estado de reserva de descarga (activo mientras el plan retiene la batería para más tarde), Venta a precio alto, Retención de excedente por precio y la predescarga inteligente, y el botón de reevaluar.
 
 ![La tarjeta de carga predictiva con Avanzado activado](../../assets/screenshots/configuration/predictive-charging/predictive-charging-card.png){ width="485" style="display: block; margin: 0 auto;" }
 
