@@ -73,7 +73,12 @@ def test_v19_drops_both_keys_and_both_entities_whatever_their_entity_id():
         assert platform == DOMAIN
         return registry.get((domain, unique_id))
 
-    fake = SimpleNamespace(async_get_entity_id=get_entity_id, async_remove=removed.append)
+    # ha-install only: an entry at 18 also takes the offgrid step here (the
+    # fork's ha.41 entry), which lists the entry's entities.
+    fake = SimpleNamespace(
+        async_get_entity_id=get_entity_id, async_remove=removed.append,
+        entities=SimpleNamespace(get_entries_for_config_entry_id=lambda _entry_id: []),
+    )
     hass = SimpleNamespace(config_entries=_Entries())
     entry = SimpleNamespace(
         version=18, entry_id="entry",
