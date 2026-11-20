@@ -41,7 +41,6 @@ from custom_components.omnibattery.const import (
     DEFAULT_NEGATIVE_INJECTION_THRESHOLD,
     DEFAULT_PREDICTIVE_MIN_SOC_FLOOR,
     DEFAULT_PREDISCHARGE_RESERVE_SOC,
-    DEFAULT_ROUND_TRIP_EFFICIENCY,
     DEFAULT_SURPLUS_HOLD_MIN_SAVING,
 )
 
@@ -76,14 +75,15 @@ DEFAULTS = {
     # predictive charging card
     "predictive_charging": "off",
     "predictive_charging_notifications": "on",
+    "predictive_safety_margin_kwh_use_default": "on",
     "predictive_safety_margin_kwh": "5 % of the total battery capacity",
     "min_soc_floor_enabled": "off",
     "predictive_min_soc_floor": _pct(DEFAULT_PREDICTIVE_MIN_SOC_FLOOR),
     "max_price_threshold_enabled": "off (automatic)",
     "max_price_threshold": "not set (automatic)",
     "min_arbitrage_margin": "0 (losses only)",
-    # 0.85 stored stands for the measured value (energy.effective_round_trip_efficiency)
-    "round_trip_efficiency": f"{DEFAULT_ROUND_TRIP_EFFICIENCY:g} (replaced by the value measured on your batteries once one has 50 cycles)",
+    "round_trip_efficiency_use_measured": "on",
+    "round_trip_efficiency": "measured (0.85 until a battery has 50 cycles)",
     "negative_price_charging": "off",
     "price_discharge_control": "off",
     "discharge_price_threshold_enabled": "off (automatic)",
@@ -101,6 +101,7 @@ DEFAULTS = {
     # main switches of the other cards
     "manual_mode": "off",
     "offgrid_mode": "off",
+    "no_pd_mode": "off",
     "charge_delay": "off",
     "hourly_balance": "off",
     "system_power_limits": "off",
@@ -160,10 +161,11 @@ NO_DEFAULT = (
     "discharge_reserve_status",
     "reevaluate_dynamic_pricing",
     "system_pd_control_quality",
+    "predictive_charging_active",
+    "weekly_full_charge",
+    "temperature_charge_limit_status",
+    "excluded_device_status",
 )
-# One switch on two cards with opposite sense ("Use PD controller" shows it
-# inverted); each card's own tooltip explains it.
-NO_TOOLTIP = ("no_pd_mode",)
 
 
 def _help(lang):
@@ -199,7 +201,7 @@ def test_every_setting_row_of_the_panel_is_covered():
     panel = PANEL.read_text(encoding="utf-8")
     block = panel[panel.index("const SYS_SECTIONS = [") : panel.index("const SYS_HELP = {")]
     keys = set(re.findall(r'\{ key: "(\w+)"', block))
-    assert keys - set(DEFAULTS) - set(NO_DEFAULT) - set(NO_TOOLTIP) == set()
+    assert keys - set(DEFAULTS) - set(NO_DEFAULT) == set()
 
 
 @pytest.mark.parametrize("lang", LANGS)
