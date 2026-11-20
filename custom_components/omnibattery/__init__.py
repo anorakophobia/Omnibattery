@@ -11796,7 +11796,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     new_options = dict(entry.options)
-    if entry.version < 19:
+    # ha-install only: this fork's ha.42 build used v19 for the round-trip
+    # efficiency step, so its entry is at 19 without upstream's v19 below.
+    # The step is idempotent, so it also runs for an entry at 19.
+    if entry.version < 20:
         from homeassistant.helpers import entity_registry as er
         from .infra.entity_naming import SYSTEM_UNIQUE_ID_PREFIX
 
@@ -11836,8 +11839,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "(solar safety margin is now a %% of the forecast sun)",
         )
 
-    # ha-install only: an entry at 18 here already took this step (as v18 on
-    # ha.41); a 0.85 stored since then is a fixed value and stays.
+    # ha-install only: an entry at 18 or 19 here already took this step (as
+    # v18 on ha.41, as v19 on ha.42); a 0.85 stored since then is a fixed
+    # value and stays.
     if entry.version < 18:
         if new_data.get(CONF_ROUND_TRIP_EFFICIENCY) == DEFAULT_ROUND_TRIP_EFFICIENCY:
             new_data.pop(CONF_ROUND_TRIP_EFFICIENCY)
