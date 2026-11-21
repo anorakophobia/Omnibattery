@@ -1642,6 +1642,18 @@
       }
     },
     "sensor": {
+      "excluded_device_status": {
+        "name": "{device} – Estat",
+        "state": {
+          "paused": "En pausa",
+          "unmeasured": "Sense lectura de potència",
+          "idle": "Inactiu",
+          "priority": "Prioritat (cedint)",
+          "solar_surplus": "Amb excedent solar",
+          "excluded": "Exclòs de la bateria",
+          "covered": "Cobert per la bateria"
+        }
+      },
       "discharge_window": {
         "name": "Finestra de Descàrrega",
         "state": {
@@ -2466,6 +2478,9 @@
       },
       "surplus_price_hold_status": {
         "name": "Estat de retenció d'excedent per preu"
+      },
+      "temperature_charge_limit_status": {
+        "name": "Estat del límit de càrrega per temperatura"
       },
       "discharge_reserve_status": {
         "name": "Estat de la reserva de descàrrega"
