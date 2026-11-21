@@ -79,6 +79,7 @@ Estas entidades pertenecen a **Omnibattery System**, no a una batería.
     - Opciones de controlador siempre disponibles: `manual_mode`, `no_pd_mode`, `three_phase_protection`, `weekly_full_charge_enabled`, `vacation_mode`, `grid_import_window_15min` (Ventana de 15 min de Importación de Red, ver [Peak shaving](../features/peak-shaving.es.md#ventana-de-15-minutos))
     - Funciones condicionales: `offgrid_mode`, `primary_feedforward`, `system_power_limits`, `predictive_charging`, `predictive_charging_notifications`, `min_soc_floor_enabled`, `charge_delay`, `delay_soc_setpoint_enabled`, `weekly_full_charge_delay`, `temp_charge_limit`, `temp_charge_limit_discharge`, `capacity_protection`, `capacity_protection_excluded_devices`, `hourly_balance`
     - Controles de precios: `price_discharge_control`, `smart_predischarge`, `negative_price_charging`, `surplus_price_hold`
+    - Valores por defecto y medidos: `predictive_safety_margin_kwh_use_default` (el margen de seguridad sigue el valor por defecto de la flota) y `round_trip_efficiency_use_measured` (el planificador usa la eficiencia medida), cada uno junto a su número
     - Controles generados: `time_slot` para cada franja horaria configurada; `excluded_device_enabled`, `excluded_device_solar_surplus`, `excluded_device_dynamic_power_control` y `excluded_device_cover_home` para cada dispositivo excluido aplicable
     - Compatibilidad con automatización externa: `automation_charging_active`
 

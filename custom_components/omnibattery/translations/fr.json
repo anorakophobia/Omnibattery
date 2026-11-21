@@ -1539,6 +1539,12 @@
       "min_soc_floor_enabled": {
         "name": "SOC Minimum Garanti"
       },
+      "predictive_safety_margin_kwh_use_default": {
+        "name": "Marge de Sécurité Prévision Solaire : utiliser la valeur par défaut"
+      },
+      "round_trip_efficiency_use_measured": {
+        "name": "Rendement aller-retour : utiliser la valeur mesurée"
+      },
       "max_price_threshold_enabled": {
         "name": "Plafond de prix de charge manuel"
       },

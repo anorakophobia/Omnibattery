@@ -60,6 +60,10 @@ Bajo cada encabezado, cada función es un grupo, separado por una línea: su int
 - **Avanzado** en la cabecera de la tarjeta muestra los ajustes finos; desactivado, cada función conserva su interruptor y su estado.
 - Los controles deslizantes de un precio por kWh cubren el rango habitual en céntimos enteros; escribe un valor para ir más allá.
 
+### Margen de seguridad de previsión solar
+
+**Margen de seguridad de previsión solar** se resta una vez de la solar esperada. Por defecto es el 5% de la capacidad total de la flota, contando las baterías que comunican su propia capacidad (una Marstek por Modbus, una Zendure o Hoymiles dejada en 0 para la detección). Mientras su interruptor **valor por defecto** está activado, sigue a la flota cuando se añaden o quitan baterías, y el control deslizante lleva la etiqueta *por defecto*. Mover el control deslizante fija un valor y desactiva el interruptor; activarlo de nuevo descarta ese valor.
+
 ## Si no funciona
 
 | Síntoma | Causa probable | Qué comprobar |
@@ -95,7 +99,7 @@ Bajo cada encabezado, cada función es un grupo, separado por una línea: su int
 
     En una flota con varias baterías, el objetivo de red se distribuye proporcionalmente a la distancia de cada batería a su SOC máximo configurado. Precio dinámico y Franja horaria también pueden asignar una cuota a cada periodo y transferir la energía no entregada solo a periodos posteriores que aún cumplan su plazo.
 
-    **Margen de seguridad de previsión solar** se resta una vez de la solar esperada. Las instalaciones nuevas tienen por defecto aproximadamente el 5% de la capacidad total de batería configurada; si la capacidad no está disponible durante la configuración, el método alternativo es no aplicar margen.
+    **Margen de seguridad de previsión solar** se resta una vez de la solar esperada; consulta [Margen de seguridad de previsión solar](#margen-de-seguridad-de-prevision-solar) para su valor por defecto. Antes de que las baterías hayan comunicado su capacidad, el valor por defecto es sin margen.
 
     ### Demanda de la vivienda durante una franja de carga
 

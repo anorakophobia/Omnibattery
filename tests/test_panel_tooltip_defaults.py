@@ -41,7 +41,6 @@ from custom_components.omnibattery.const import (
     DEFAULT_NEGATIVE_INJECTION_THRESHOLD,
     DEFAULT_PREDICTIVE_MIN_SOC_FLOOR,
     DEFAULT_PREDISCHARGE_RESERVE_SOC,
-    DEFAULT_ROUND_TRIP_EFFICIENCY,
     DEFAULT_SURPLUS_HOLD_MIN_SAVING,
 )
 
@@ -76,14 +75,15 @@ DEFAULTS = {
     # predictive charging card
     "predictive_charging": "off",
     "predictive_charging_notifications": "on",
+    "predictive_safety_margin_kwh_use_default": "on",
     "predictive_safety_margin_kwh": "5 % of the total battery capacity",
     "min_soc_floor_enabled": "off",
     "predictive_min_soc_floor": _pct(DEFAULT_PREDICTIVE_MIN_SOC_FLOOR),
     "max_price_threshold_enabled": "off (automatic)",
     "max_price_threshold": "not set (automatic)",
     "min_arbitrage_margin": "0 (losses only)",
-    # 0.85 stored stands for the measured value (energy.effective_round_trip_efficiency)
-    "round_trip_efficiency": f"{DEFAULT_ROUND_TRIP_EFFICIENCY:g} (replaced by the value measured on your batteries once one has 50 cycles)",
+    "round_trip_efficiency_use_measured": "on",
+    "round_trip_efficiency": "measured (0.85 until a battery has 50 cycles)",
     "negative_price_charging": "off",
     "price_discharge_control": "off",
     "discharge_price_threshold_enabled": "off (automatic)",

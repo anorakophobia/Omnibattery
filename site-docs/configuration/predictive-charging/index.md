@@ -60,6 +60,10 @@ Under a heading each feature is one group, separated by a line: its switch, its 
 - **Advanced** on the card header shows the fine-tuning settings; with it off, each feature keeps its switch and status.
 - Sliders for a price per kWh cover the usual range in whole cents; type a value to go beyond it.
 
+### Solar Forecast Safety Margin
+
+**Solar Forecast Safety Margin** is subtracted once from expected solar. By default it is 5% of the fleet's total capacity, counting batteries that report their own capacity (a Marstek over Modbus, a Zendure or Hoymiles left at 0 for detection). While its **use default** switch is on, it follows the fleet when batteries are added or removed, and the slider is tagged *default*. Moving the slider sets a fixed value and turns the switch off; turning it on again discards that value.
+
 ## If it does not work
 
 | Symptom | Likely cause | What to check |
@@ -95,7 +99,7 @@ Under a heading each feature is one group, separated by a line: its switch, its 
 
     In a multi-battery fleet, the grid target is distributed in proportion to each battery's gap to its configured maximum SOC. Dynamic Pricing and Time Slot can also assign a quota to each period and transfer missed energy only to later periods that still meet its deadline.
 
-    **Solar Forecast Safety Margin** is subtracted from expected solar once. New installations default to approximately 5% of total configured battery capacity; if capacity is unavailable during setup, the fallback is no margin.
+    **Solar Forecast Safety Margin** is subtracted from expected solar once; see [Solar Forecast Safety Margin](#solar-forecast-safety-margin) for its default. Before the batteries have reported their capacity, the default is no margin.
 
     ### Household demand during a charging slot
 
