@@ -34,7 +34,7 @@ async def test_a_fork_v18_entry_drops_the_offgrid_threshold_and_its_entity():
     entry, removed = await _migrate(18, {
         "batteries": [{"name": "a", "backup_offgrid_threshold": 50}, {"name": "b"}],
     })
-    assert entry.version == 20
+    assert entry.version == 21
     assert entry.data["batteries"] == [{"name": "a"}, {"name": "b"}]
     assert removed == ["number.offgrid"]
 
@@ -42,11 +42,11 @@ async def test_a_fork_v18_entry_drops_the_offgrid_threshold_and_its_entity():
 async def test_a_fork_v18_entry_keeps_a_fixed_round_trip_efficiency_of_085():
     # The round-trip step ran as v18 on ha.41: a 0.85 stored since is a fixed value.
     entry, _ = await _migrate(18, {CONF_ROUND_TRIP_EFFICIENCY: 0.85, "batteries": []})
-    assert entry.version == 20
+    assert entry.version == 21
     assert entry.data[CONF_ROUND_TRIP_EFFICIENCY] == 0.85
 
 
 async def test_an_entry_below_v18_still_drops_the_sentinel_085():
     entry, _ = await _migrate(17, {CONF_ROUND_TRIP_EFFICIENCY: 0.85, "batteries": []})
-    assert entry.version == 20
+    assert entry.version == 21
     assert CONF_ROUND_TRIP_EFFICIENCY not in entry.data

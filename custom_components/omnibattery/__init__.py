@@ -11822,7 +11822,10 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "(Discharge Reserve switch and minimum saving removed)",
         )
 
-    if entry.version < 20:
+    # ha-install only: this fork's ha.43 and ha.44 builds used v20 for the
+    # round-trip efficiency step, so their entry is at 20 without upstream's
+    # v20 below. The step is idempotent, so it also runs for an entry at 20.
+    if entry.version < 21:
         from homeassistant.helpers import entity_registry as er
         from .infra.entity_naming import SYSTEM_UNIQUE_ID_PREFIX
 
@@ -11839,9 +11842,9 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "(solar safety margin is now a %% of the forecast sun)",
         )
 
-    # ha-install only: an entry at 18 or 19 here already took this step (as
-    # v18 on ha.41, as v19 on ha.42); a 0.85 stored since then is a fixed
-    # value and stays.
+    # ha-install only: an entry at 18, 19 or 20 here already took this step
+    # (as v18 on ha.41, as v19 on ha.42, as v20 on ha.43 and ha.44); a 0.85
+    # stored since then is a fixed value and stays.
     if entry.version < 18:
         if new_data.get(CONF_ROUND_TRIP_EFFICIENCY) == DEFAULT_ROUND_TRIP_EFFICIENCY:
             new_data.pop(CONF_ROUND_TRIP_EFFICIENCY)

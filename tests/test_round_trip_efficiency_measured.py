@@ -180,11 +180,11 @@ async def test_the_migration_turns_the_hidden_0_85_into_measured():
     assert CONF_ROUND_TRIP_EFFICIENCY not in await _migrate({CONF_ROUND_TRIP_EFFICIENCY: 0.85})
 
 
-async def test_the_migration_is_its_own_step_after_v20():
-    # v20 is the solar safety margin's; an entry already there still gets this one.
-    assert CONF_ROUND_TRIP_EFFICIENCY not in await _migrate(
-        {CONF_ROUND_TRIP_EFFICIENCY: 0.85}, version=20
-    )
+async def test_an_entry_at_v20_already_took_the_step_on_this_build():
+    # ha-install only: v20 was this step on ha.43 and ha.44, so a 0.85 stored
+    # at 20 is a fixed value. Upstream's branch drops it there instead.
+    data = await _migrate({CONF_ROUND_TRIP_EFFICIENCY: 0.85}, version=20)
+    assert data[CONF_ROUND_TRIP_EFFICIENCY] == 0.85
 
 
 async def test_the_migration_keeps_any_other_value():

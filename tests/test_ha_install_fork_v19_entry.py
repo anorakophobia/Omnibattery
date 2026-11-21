@@ -45,7 +45,7 @@ async def test_a_fork_v19_entry_drops_the_discharge_reserve_keys_and_entities():
         {"batteries": [], GONE[0]: True, GONE[1]: 0.0, "surplus_hold_min_saving": 0.02},
         {GONE[1]: 0.02, "other": 1},
     )
-    assert entry.version == 20
+    assert entry.version == 21
     assert not set(GONE) & set(entry.data) and not set(GONE) & set(entry.options)
     assert entry.data["surplus_hold_min_saving"] == 0.02 and entry.options == {"other": 1}
     assert sorted(removed) == [
@@ -57,10 +57,10 @@ async def test_a_fork_v19_entry_drops_the_discharge_reserve_keys_and_entities():
 async def test_a_fork_v19_entry_keeps_a_fixed_round_trip_efficiency_of_085():
     # The round-trip step ran as v19 on ha.42: a 0.85 stored since is a fixed value.
     entry, _ = await _migrate(19, {CONF_ROUND_TRIP_EFFICIENCY: 0.85, "batteries": []})
-    assert entry.version == 20
+    assert entry.version == 21
     assert entry.data[CONF_ROUND_TRIP_EFFICIENCY] == 0.85
 
 
 async def test_a_current_entry_is_left_alone():
-    entry, removed = await _migrate(20, {GONE[0]: True, "batteries": []})
-    assert entry.version == 20 and entry.data[GONE[0]] is True and removed == []
+    entry, removed = await _migrate(21, {GONE[0]: True, "batteries": []})
+    assert entry.version == 21 and entry.data[GONE[0]] is True and removed == []
