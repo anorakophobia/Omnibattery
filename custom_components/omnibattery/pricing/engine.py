@@ -3965,6 +3965,7 @@ class PricingManager:
         controller._dp_plan_saving = None
         controller._dp_plan_quarters = None
         controller._dp_plan_weekly_holds = None
+        controller._dp_plan_weekly_charges = None
         controller._dp_weekly_full_at = None
         controller._dp_plan_exports = None
         controller._dp_export_decision = None
@@ -4021,6 +4022,10 @@ class PricingManager:
         )
         self._controller._dp_plan_weekly_holds = (
             frozenset(getattr(plan, "weekly_holds", None) or ()) if weekly_on else None
+        )
+        # Its charges, for the status attributes only (``weekly_full``).
+        self._controller._dp_plan_weekly_charges = (
+            frozenset(getattr(plan, "weekly_charges", None) or ()) if weekly_on else None
         )
         # A guaranteed floor and a weekly charge are paid for; without them a
         # plan dearer than no plan is a fault of the plan (the sweep's I8).

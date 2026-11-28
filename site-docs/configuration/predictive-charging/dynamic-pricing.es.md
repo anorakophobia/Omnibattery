@@ -120,7 +120,7 @@ Los controles opcionales de la pestaña **Control** resuelven problemas distinto
 
     Esta función opcional selecciona independientemente periodos de importación horarios o de cuarto de hora cuyo precio normalizado sea inferior a cero. Calcula la energía de batería necesaria para alcanzar el SOC máximo configurado de cada batería y toma primero los periodos más negativos. No se requiere previsión solar.
 
-    Cada periodo seleccionado registra `deficit`, `negative_price` o `combined` como su propósito. Un periodo de déficit con precio positivo conserva el objetivo normal de déficit. En un periodo combinado, se aplica el mayor de los objetivos de déficit y oportunidad. La carga se detiene en el SOC máximo configurado de cada batería y se eliminan los periodos solo de oportunidad no usados.
+    Cada periodo seleccionado registra `deficit`, `negative_price` o `combined` como su propósito. En `selected_hours`, un periodo de déficit que el plan carga mientras la carga completa semanal sigue pendiente aparece como `weekly_full`. Un periodo de déficit con precio positivo conserva el objetivo normal de déficit. En un periodo combinado, se aplica el mayor de los objetivos de déficit y oportunidad. La carga se detiene en el SOC máximo configurado de cada batería y se eliminan los periodos solo de oportunidad no usados.
 
     Durante una ventana de riesgo de limitación de producción, la carga oportunista solo puede usar el espacio de batería que queda después de reservar espacio para la solar esperada:
 

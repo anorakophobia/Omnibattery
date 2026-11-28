@@ -120,7 +120,7 @@ Optional controls in the **Control** tab solve different problems:
 
     This opt-in feature independently selects hourly or quarter-hour import periods whose normalized price is below zero. It calculates the battery energy needed to reach each battery’s configured maximum SOC and takes the most negative periods first. A solar forecast is not required.
 
-    Each selected period records `deficit`, `negative_price`, or `combined` as its purpose. A positive-price deficit period retains the normal deficit target. In a combined period, the higher of the deficit and opportunity targets applies. Charging stops at each battery’s configured maximum SOC, and unused opportunity-only periods are removed.
+    Each selected period records `deficit`, `negative_price`, or `combined` as its purpose. In `selected_hours`, a deficit period the plan charges while a weekly full charge is still pending shows as `weekly_full`. A positive-price deficit period retains the normal deficit target. In a combined period, the higher of the deficit and opportunity targets applies. Charging stops at each battery’s configured maximum SOC, and unused opportunity-only periods are removed.
 
     During an anti-curtailment risk window, opportunity charging can use only battery space left after reserving room for expected solar:
 

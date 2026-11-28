@@ -560,6 +560,7 @@ def optimize_charge(request: ChronologicalEvaluationRequest) -> ChronologicalEva
     allocations: list[SlotAllocation] = []
     holds: list = []
     weekly_holds: list = []
+    weekly_charges: list = []  # charged while the weekly charge is pending (output only)
     paid_holds: list = []  # held on a hold start no charge has used yet (#958)
     exports: list = []
     sales: list = []
@@ -651,6 +652,8 @@ def optimize_charge(request: ChronologicalEvaluationRequest) -> ChronologicalEva
                 # ``stored`` as a plain quota would stop it early.
                 to_slot_end=open_,
             ))
+            if layer:
+                weekly_charges.append(slot)
         total += c
         # What the battery delivered to the house, per quarter (output only).
         eff = layer_model[bool(layer)].eff
@@ -726,6 +729,7 @@ def optimize_charge(request: ChronologicalEvaluationRequest) -> ChronologicalEva
     plan.charge_starts = starts
     plan.hold_starts = hold_starts
     plan.weekly_holds = tuple(weekly_holds)
+    plan.weekly_charges = tuple(weekly_charges)
     plan.paid_holds = frozenset(paid_holds)
     plan.weekly_full_at = full_at
     # The plan decided Smart Pre-Discharge (with export prices, design §2.6 A).

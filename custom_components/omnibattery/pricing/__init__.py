@@ -14,6 +14,25 @@ PriceSlot = namedtuple("PriceSlot", ["start", "end", "price"])
 SLOT_PURPOSE_DEFICIT = "deficit"
 SLOT_PURPOSE_NEGATIVE_PRICE = "negative_price"
 SLOT_PURPOSE_COMBINED = "combined"
+# Shown only (the status attributes and diagnostics): a deficit slot the
+# optimizer charges while a weekly full charge is still pending. Control keeps
+# the slot's own purpose (``slot_purposes``).
+SLOT_PURPOSE_WEEKLY_FULL = "weekly_full"
+
+
+def shown_slot_purpose(controller, schedule, slot) -> str:
+    """The purpose shown for a selected slot: ``weekly_full`` for a deficit
+    slot the plan charges towards a pending weekly full charge, else its own."""
+    purpose = (
+        schedule.purpose_for(slot)
+        if hasattr(schedule, "purpose_for")
+        else SLOT_PURPOSE_DEFICIT
+    )
+    if purpose == SLOT_PURPOSE_DEFICIT and slot in (
+        getattr(controller, "_dp_plan_weekly_charges", None) or ()
+    ):
+        return SLOT_PURPOSE_WEEKLY_FULL
+    return purpose
 
 
 @dataclass
@@ -88,6 +107,8 @@ __all__ = [
     "SLOT_PURPOSE_DEFICIT",
     "SLOT_PURPOSE_NEGATIVE_PRICE",
     "SLOT_PURPOSE_COMBINED",
+    "SLOT_PURPOSE_WEEKLY_FULL",
+    "shown_slot_purpose",
     "BatterySnapshot",
     "CurtailmentPlan",
     "PreDischargeSlot",

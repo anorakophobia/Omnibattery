@@ -1111,10 +1111,38 @@ def test_a_weekly_full_charge_day_is_the_optimizer_s(monkeypatch):
     assert not [s for s in c._dp_plan_room.orders if s.start < req.full_by]
 
 
+def test_a_pending_weekly_charge_shows_its_slots_as_weekly_full(monkeypatch):
+    """The slots the plan charges while the 100 % is pending show as
+    ``weekly_full`` in the status attributes and diagnostics; control keeps
+    their own purpose."""
+    from custom_components.omnibattery import diagnostics
+    from custom_components.omnibattery.pricing import (
+        SLOT_PURPOSE_DEFICIT,
+        SLOT_PURPOSE_WEEKLY_FULL,
+        shown_slot_purpose,
+    )
+
+    _outcome, c = _room_engine(monkeypatch, weekly=True)
+    schedule = c._dynamic_pricing_schedule
+    weekly = c._dp_plan_weekly_charges
+    assert weekly
+    assert weekly <= set(schedule.selected_slots)
+    for slot in schedule.selected_slots:
+        assert schedule.purpose_for(slot) != SLOT_PURPOSE_WEEKLY_FULL
+        shown = shown_slot_purpose(c, schedule, slot)
+        if slot in weekly and schedule.purpose_for(slot) == SLOT_PURPOSE_DEFICIT:
+            assert shown == SLOT_PURPOSE_WEEKLY_FULL
+        else:
+            assert shown == schedule.purpose_for(slot)
+    info = diagnostics._dynamic_pricing_info(c)
+    assert SLOT_PURPOSE_WEEKLY_FULL in {s["purpose"] for s in info["selected_slots"]}
+
+
 def test_without_a_weekly_charge_the_request_carries_none(monkeypatch):
     outcome, c = _room_engine(monkeypatch)
     assert outcome.request.full_by is None and outcome.request.charge_curve == ()
     assert c._dp_plan_weekly_holds is None
+    assert c._dp_plan_weekly_charges is None
 
 
 def test_a_plan_that_delays_the_sun_unlocks_the_weekly_ceiling(monkeypatch):

@@ -19,6 +19,7 @@ from homeassistant.core import HomeAssistant
 from .const import DOMAIN
 from .drivers.base import can_take_setpoint
 from .drivers.registry import redact_keys
+from .pricing import shown_slot_purpose
 
 # Identifiers and user sensor references that could deanonymise the dump.
 # async_redact_data recurses into nested dicts/lists, so per-battery "host"
@@ -545,11 +546,7 @@ def _dynamic_pricing_info(controller) -> dict[str, Any]:
                         else getattr(slot, "end", None)
                     ),
                     "price": _json_safe(getattr(slot, "price", None)),
-                    "purpose": (
-                        schedule.purpose_for(slot)
-                        if hasattr(schedule, "purpose_for")
-                        else "deficit"
-                    ),
+                    "purpose": shown_slot_purpose(controller, schedule, slot),
                 }
                 for slot in selected_slots
             ],

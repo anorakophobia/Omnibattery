@@ -24,6 +24,7 @@ from .drivers.base import can_take_setpoint
 from .energy import effective_round_trip_efficiency
 from .infra.coordinator import MarstekVenusDataUpdateCoordinator
 from .infra.entity_naming import english_entity_id, system_entity_id, SYSTEM_UNIQUE_ID_PREFIX
+from .pricing import shown_slot_purpose
 from .solar_forecast import read_solar_forecast_kwh
 
 _LOGGER = logging.getLogger(__name__)
@@ -1021,11 +1022,7 @@ class PredictiveChargingStatusSensor(BinarySensorEntity):
                     "start": s.start.isoformat(),
                     "end": s.end.isoformat(),
                     "price": s.price,
-                    "purpose": (
-                        schedule.purpose_for(s)
-                        if hasattr(schedule, "purpose_for")
-                        else "deficit"
-                    ),
+                    "purpose": shown_slot_purpose(self.controller, schedule, s),
                 }
                 for s in schedule.selected_slots
             ]
