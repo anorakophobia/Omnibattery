@@ -2,9 +2,9 @@
 
 ## [Unreleased]
 
-### Added
+### Fixed
 
-- **Weekly Full Charge slots show as `weekly_full`**: in the `selected_hours` attribute of *Predictive Charging Active* and in the diagnostics, a grid-charge slot the plan books while the weekly full charge is still pending now shows the purpose `weekly_full` instead of `deficit`. Display only: the slots charge as before.
+- **Weekly Full Charge slots no longer show as `deficit`**: in the `selected_hours` attribute of *Predictive Charging Active* and in the diagnostics, a grid-charge slot the plan books while the weekly full charge is still pending showed the purpose `deficit`, even with no energy deficit. It now shows `weekly_full`. Display only: the slots charge as before.
 
 ## [2.0.0b3] - 2026-11-27
 
